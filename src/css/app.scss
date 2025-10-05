@@ -1,1 +1,21 @@
 // app global css in SCSS form
+body {
+  background-color: #f6f7fb;
+  font-family: 'Inter', 'Roboto', sans-serif;
+  color: #333;
+}
+
+/* Card shadows and spacing */
+.q-card {
+  border-radius: 16px !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+/* Animations for lists */
+.fade-slide-up-enter-active {
+  transition: all 0.3s ease;
+}
+.fade-slide-up-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
