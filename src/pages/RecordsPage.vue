@@ -34,10 +34,10 @@
               <div class="text-caption text-grey">{{ tx.date }} – {{ tx.notes || 'No notes' }}</div>
             </div>
             <div
-              :class="tx.type === 'income' ? 'text-positive' : 'text-negative'"
+              :class="tx.kind === 'income' ? 'text-positive' : 'text-negative'"
               class="text-subtitle1"
             >
-              {{ tx.type === 'income' ? '+' : '-' }}{{ tx.amount }} PHP
+              {{ tx.kind === 'income' ? '+' : '-' }}{{ tx.amount }} PHP
             </div>
           </div>
         </q-card-section>
@@ -74,9 +74,11 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { useDatabase } from 'src/composables/useDatabase.js'
 
-// Reactive data
+const { getAllDocs, saveDoc, localDB } = useDatabase()
+const transactions = ref([])
 const showAddDialog = ref(false)
 const newTx = ref({
   type: 'expense',
@@ -86,30 +88,49 @@ const newTx = ref({
   date: new Date().toISOString().substring(0, 10),
 })
 
-const transactions = ref([
-  { _id: 'tx1', type: 'income', category: 'Salary', amount: 15000, date: '2025-10-01' },
-  { _id: 'tx2', type: 'expense', category: 'Food', amount: 400, date: '2025-10-02' },
-  { _id: 'tx3', type: 'expense', category: 'Transport', amount: 150, date: '2025-10-02' },
-])
-
-// Computed totals
-const incomeTotal = computed(() =>
-  transactions.value.filter((t) => t.type === 'income').reduce((sum, t) => sum + t.amount, 0),
-)
-const expenseTotal = computed(() =>
-  transactions.value.filter((t) => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0),
-)
-const netTotal = computed(() => incomeTotal.value - expenseTotal.value)
-
-// Add transaction
-function addTransaction() {
-  const id = 'tx' + (transactions.value.length + 1)
-  transactions.value.unshift({ _id: id, ...newTx.value })
-  showAddDialog.value = false
+async function loadTransactions() {
+  const docs = await getAllDocs('transaction')
+  transactions.value = docs.sort((a, b) => b.date.localeCompare(a.date))
 }
 
-// Month label
-const currentMonth = computed(() =>
-  new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
+// Sync changes live
+localDB.changes({ since: 'now', live: true, include_docs: true }).on('change', loadTransactions)
+
+onMounted(loadTransactions)
+
+// Add new transaction
+async function addTransaction() {
+  await saveDoc({
+    type: 'transaction',
+    category: newTx.value.category,
+    amount: Number(newTx.value.amount),
+    notes: newTx.value.notes,
+    date: newTx.value.date,
+    kind: newTx.value.type,
+  })
+  showAddDialog.value = false
+  newTx.value = {
+    type: 'expense',
+    amount: 0,
+    category: '',
+    notes: '',
+    date: new Date().toISOString().substring(0, 10),
+  }
+}
+
+// Current month label
+const currentMonth = computed(() => {
+  return new Date().toLocaleString('default', { month: 'long', year: 'numeric' })
+})
+
+// Summary totals
+const incomeTotal = computed(() =>
+  transactions.value.filter((tx) => tx.kind === 'income').reduce((sum, tx) => sum + tx.amount, 0),
 )
+
+const expenseTotal = computed(() =>
+  transactions.value.filter((tx) => tx.kind === 'expense').reduce((sum, tx) => sum + tx.amount, 0),
+)
+
+const netTotal = computed(() => incomeTotal.value - expenseTotal.value)
 </script>

@@ -1,9 +1,12 @@
 // src/composables/useDatabase.js
 import PouchDB from 'pouchdb-browser'
+import PouchFind from 'pouchdb-find'
+
+PouchDB.plugin(PouchFind) // <-- enable the .find() method
 
 const localDB = new PouchDB('finance_local')
-const remoteDB = new PouchDB('http://your-server-address:5984/finance_db', {
-  auth: { username: 'admin', password: 'password' }, // adjust if needed
+const remoteDB = new PouchDB('http://147.182.253.3:5984/mywallet_db', {
+  auth: { username: 'root', password: 'Sharpest2Mind' }, // adjust if needed
 })
 
 // Continuous live sync
@@ -18,6 +21,14 @@ localDB
   .on('error', (err) => {
     console.error('Sync error:', err)
   })
+
+async function ensureIndexes() {
+  await localDB.createIndex({
+    index: { fields: ['type'] },
+  })
+}
+
+ensureIndexes()
 
 export function useDatabase() {
   async function getAllDocs(type) {
