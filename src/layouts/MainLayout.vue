@@ -1,5 +1,12 @@
 <template>
   <q-layout view="lHh Lpr lFf">
+    <q-header class="bg-primary text-white">
+      <q-toolbar>
+        <q-toolbar-title>myWallet</q-toolbar-title>
+        <q-btn flat round icon="logout" @click="logout" />
+      </q-toolbar>
+    </q-header>
+
     <q-page-container>
       <router-view />
     </q-page-container>
@@ -28,15 +35,17 @@ import { ref, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useWalletsStore } from 'src/stores/wallets'
 import { useCategoriesStore } from 'src/stores/categories'
+import { useAuthStore } from 'src/stores/auth'
 
 const router = useRouter()
 const route = useRoute()
-const tab = ref(route.name || 'records')
+const tab = ref(route.name || 'home')
 
 watch(route, () => (tab.value = route.name))
 
 const walletsStore = useWalletsStore()
 const categoriesStore = useCategoriesStore()
+const authStore = useAuthStore()
 
 onMounted(() => {
   walletsStore.loadWallets()
@@ -45,5 +54,10 @@ onMounted(() => {
 
 function goToTab(name) {
   router.push({ name })
+}
+
+function logout() {
+  authStore.logout()
+  router.push('/landing')
 }
 </script>
