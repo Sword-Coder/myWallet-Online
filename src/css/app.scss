@@ -3,6 +3,10 @@ body {
   background-color: #f6f7fb;
   font-family: 'Inter', 'Roboto', sans-serif;
   color: #333;
+
+  // Global scrollbar styling for Firefox
+  scrollbar-width: thin;
+  scrollbar-color: #4d934e #f1f1f1;
 }
 
 /* Card shadows and spacing */
@@ -18,4 +22,32 @@ body {
 .fade-slide-up-enter-from {
   opacity: 0;
   transform: translateY(10px);
+}
+
+/* ========================================
+   HIDE ALL SCROLLBARS COMPLETELY
+   ======================================== */
+
+/* Webkit browsers (Chrome, Safari, Edge) - Hide all scrollbars */
+::-webkit-scrollbar {
+  width: 0px !important;
+  height: 0px !important;
+  display: none !important;
+}
+
+::-webkit-scrollbar-track {
+  display: none !important;
+}
+
+::-webkit-scrollbar-thumb {
+  display: none !important;
+}
+
+::-webkit-scrollbar-corner {
+  display: none !important;
+}
+
+/* Firefox - Hide all scrollbars */
+* {
+  scrollbar-width: none !important;
 }

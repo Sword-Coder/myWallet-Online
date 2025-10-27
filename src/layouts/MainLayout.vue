@@ -12,6 +12,7 @@
         class="text-primary"
         @update:model-value="goToTab"
       >
+        <q-tab name="home" icon="home" label="Home" />
         <q-tab name="records" icon="receipt_long" label="Records" />
         <q-tab name="analysis" icon="insights" label="Analysis" />
         <q-tab name="budgets" icon="account_balance_wallet" label="Budgets" />
@@ -23,14 +24,24 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useWalletsStore } from 'src/stores/wallets'
+import { useCategoriesStore } from 'src/stores/categories'
 
 const router = useRouter()
 const route = useRoute()
 const tab = ref(route.name || 'records')
 
 watch(route, () => (tab.value = route.name))
+
+const walletsStore = useWalletsStore()
+const categoriesStore = useCategoriesStore()
+
+onMounted(() => {
+  walletsStore.loadWallets()
+  categoriesStore.loadCategories()
+})
 
 function goToTab(name) {
   router.push({ name })

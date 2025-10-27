@@ -1,25 +1,27 @@
-// Quasar SCSS (& Sass) Variables
+// Quasar SCSS (& Sass) Variables - MyWallet Financial App Theme
 // --------------------------------------------------
-// To customize the look and feel of this app, you can override
-// the Sass/SCSS variables found in Quasar's source Sass/SCSS files.
+// Custom color scheme based on favicon.ico: white, black, #4d934e
 
-// Check documentation for full list of Quasar variables
+// Primary Brand Colors (Based on favicon #4d934e green)
+$primary: #4d934e; // Favicon green - trustworthy for finance
+$secondary: #6ba06f; // Lighter favicon green - positive growth
+$accent: #8ab4f8; // Light blue - complementary accent
 
-// Your own variables (that are declared here) and Quasar's own
-// ones will be available out of the box in your .vue/.scss/.sass files
+// Dark Theme Colors
+$dark: #1a1a1a; // Dark (close to favicon black)
+$dark-page: #ffffff; // Clean white (favicon white)
 
-// It's highly recommended to change the default colors
-// to match your app's branding.
-// Tip: Use the "Theme Builder" on Quasar's documentation website.
+// Status Colors for Financial Context
+$positive: #4d934e; // Favicon green - profits, income
+$negative: #dc3545; // Alert red - losses, expenses
+$info: #4d934e; // Favicon green - tithes, spiritual giving
+$warning: #ffc107; // Caution yellow - offerings, faith promise
 
-$primary   : #1976D2;
-$secondary : #26A69A;
-$accent    : #9C27B0;
+// Additional Custom Colors for Financial Categories
+$financial-success: #4d934e; // Favicon green for success
+$financial-warning: #ffc107; // Caution yellow
+$financial-info: #4d934e; // Favicon green for info
+$financial-accent: #8ab4f8; // Light blue accent
 
-$dark      : #1D1D1D;
-$dark-page : #121212;
-
-$positive  : #21BA45;
-$negative  : #C10015;
-$info      : #31CCEC;
-$warning   : #F2C037;
+$spiritual-giving: #6f42c1; // Purple for tithes/offerings
+$essential-expense: #fd7e14; // Orange for groceries/utilities

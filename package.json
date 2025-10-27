@@ -1,8 +1,8 @@
 {
-  "name": "mywallet",
+  "name": "MyWallet - Dr. Budget",
   "version": "0.0.1",
   "description": "This app is for people who like to budget and keep record of all the in and out expenditures. Specifically, this is for Christian people who want to lessen the hassle of calculating all of the tithes. This gives you the options to delegate by percents.",
-  "productName": "myWallet Online - Dr. Budget",
+  "productName": "MyWallet - Dr. Budget",
   "author": "Jev Euniel A. Espada <jevespada12@gmail.com>",
   "type": "module",
   "private": true,
@@ -16,10 +16,14 @@
   },
   "dependencies": {
     "@quasar/extras": "^1.16.4",
+    "chart.js": "^4.5.0",
+    "pinia": "^3.0.3",
     "pouchdb-browser": "^9.0.0",
     "pouchdb-find": "^9.0.0",
     "quasar": "^2.16.0",
+    "register-service-worker": "^1.7.2",
     "vue": "3.5.20",
+    "vue-chartjs": "^5.3.2",
     "vue-router": "^4.0.0"
   },
   "devDependencies": {
@@ -33,7 +37,14 @@
     "postcss": "^8.4.14",
     "prettier": "^3.3.3",
     "vite-plugin-checker": "^0.10.3",
-    "vue-eslint-parser": "^10.2.0"
+    "vue-eslint-parser": "^10.2.0",
+    "workbox-build": "^7.3.0",
+    "workbox-cacheable-response": "^7.3.0",
+    "workbox-core": "^7.3.0",
+    "workbox-expiration": "^7.3.0",
+    "workbox-precaching": "^7.3.0",
+    "workbox-routing": "^7.3.0",
+    "workbox-strategies": "^7.3.0"
   },
   "engines": {
     "node": "^28 || ^26 || ^24 || ^22 || ^20",
