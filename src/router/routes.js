@@ -7,6 +7,7 @@ import CategoriesPage from 'pages/CategoriesPage.vue'
 import LandingPage from 'pages/LandingPage.vue'
 import LoginPage from 'pages/LoginPage.vue'
 import SignupPage from 'pages/SignupPage.vue'
+import VerifyEmailPage from 'pages/VerifyEmailPage.vue'
 
 const routes = [
   {
@@ -40,6 +41,11 @@ const routes = [
     path: '/signup',
     component: SignupPage,
     name: 'signup',
+  },
+  {
+    path: '/verify-email',
+    component: VerifyEmailPage,
+    name: 'verify-email',
   },
 
   // 404 fallback

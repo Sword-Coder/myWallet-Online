@@ -84,7 +84,7 @@
 </template>
 
 <script setup>
-import { ref, inject } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from 'src/stores/auth'
 import { useQuasar } from 'quasar'
@@ -92,7 +92,6 @@ import { useQuasar } from 'quasar'
 const router = useRouter()
 const authStore = useAuthStore()
 const $q = useQuasar()
-const $googleAuth = inject('$googleAuth')
 
 const form = ref({
   email: '',
@@ -114,21 +113,7 @@ async function handleGoogleSignup() {
 
   googleLoading.value = true
   try {
-    if (!$googleAuth) {
-      throw new Error('Google Auth not available')
-    }
-
-    const userInfo = await $googleAuth.signIn()
-
-    authStore.user = {
-      email: userInfo.email,
-      name: userInfo.name,
-      picture: userInfo.picture,
-      provider: 'google',
-    }
-    authStore.isAuthenticated = true
-    localStorage.setItem('user', JSON.stringify(authStore.user))
-
+    await authStore.signupWithGoogle()
     $q.notify({
       color: 'positive',
       message: 'Account created successfully!',
@@ -146,16 +131,16 @@ async function handleGoogleSignup() {
   }
 }
 
-function handleSignup() {
+async function handleSignup() {
   loading.value = true
   try {
-    authStore.signup(form.value.email, form.value.password)
+    await authStore.signup(form.value.email, form.value.password)
     $q.notify({
       color: 'positive',
-      message: 'Account created successfully!',
+      message: 'Account created successfully! Please check your email to verify your account.',
       icon: 'check_circle',
     })
-    router.push('/home')
+    router.push('/login')
   } catch (error) {
     $q.notify({
       color: 'negative',

@@ -60,7 +60,7 @@
 </template>
 
 <script setup>
-import { ref, inject } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from 'src/stores/auth'
 import { useQuasar } from 'quasar'
@@ -68,7 +68,6 @@ import { useQuasar } from 'quasar'
 const router = useRouter()
 const authStore = useAuthStore()
 const $q = useQuasar()
-const $googleAuth = inject('$googleAuth')
 
 const form = ref({
   email: '',
@@ -89,21 +88,7 @@ async function handleGoogleLogin() {
 
   googleLoading.value = true
   try {
-    if (!$googleAuth) {
-      throw new Error('Google Auth not available')
-    }
-
-    const userInfo = await $googleAuth.signIn()
-
-    authStore.user = {
-      email: userInfo.email,
-      name: userInfo.name,
-      picture: userInfo.picture,
-      provider: 'google',
-    }
-    authStore.isAuthenticated = true
-    localStorage.setItem('user', JSON.stringify(authStore.user))
-
+    await authStore.loginWithGoogle()
     $q.notify({
       color: 'positive',
       message: 'Signed in successfully!',
@@ -121,10 +106,10 @@ async function handleGoogleLogin() {
   }
 }
 
-function handleLogin() {
+async function handleLogin() {
   loading.value = true
   try {
-    authStore.login(form.value.email, form.value.password)
+    await authStore.login(form.value.email, form.value.password)
     $q.notify({
       color: 'positive',
       message: 'Signed in successfully!',

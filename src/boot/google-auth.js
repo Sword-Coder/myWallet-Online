@@ -22,6 +22,7 @@ export default boot(({ app }) => {
     },
   }
 
-  // Provide the googleAuth instance to the app
+  // Provide to app AND make globally available
   app.provide('$googleAuth', googleAuth)
+  window.$googleAuth = googleAuth
 })
