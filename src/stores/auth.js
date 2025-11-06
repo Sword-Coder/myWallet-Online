@@ -10,7 +10,7 @@ export const useAuthStore = defineStore('auth', () => {
   const isOnline = ref(navigator.onLine)
   const usersStore = useUsersStore()
   const { initializeUserData } = useUserData()
-  const { sendVerificationEmail } = useEmail()
+  const { sendWelcomeEmail } = useEmail()
 
   // Monitor online status
   window.addEventListener('online', () => {
@@ -51,6 +51,9 @@ export const useAuthStore = defineStore('auth', () => {
 
         // Initialize default user data
         await initializeUserData(dbUser._id)
+
+        // Send welcome email for new Google users
+        await sendWelcomeEmail(userInfo.email, userInfo.name)
       }
 
       user.value = {
@@ -80,6 +83,9 @@ export const useAuthStore = defineStore('auth', () => {
       throw new Error('Email and password are required')
     }
 
+    // Force fresh load of users data
+    await usersStore.loadUsers()
+
     const dbUser = await usersStore.findUserByEmail(email)
     if (!dbUser) {
       throw new Error('User not found')
@@ -88,6 +94,8 @@ export const useAuthStore = defineStore('auth', () => {
     if (!dbUser.password) {
       throw new Error('This account was created with Google. Please use Google login.')
     }
+
+    console.log('Login attempt for user:', dbUser.email, 'verified:', dbUser.emailVerified)
 
     if (!dbUser.emailVerified) {
       throw new Error('Please verify your email before logging in')
@@ -140,7 +148,7 @@ export const useAuthStore = defineStore('auth', () => {
     const verificationToken = btoa(
       JSON.stringify({ userId: dbUser._id, email, timestamp: Date.now() }),
     )
-    await sendVerificationEmail(email, verificationToken)
+    await sendWelcomeEmail(email, email.split('@')[0], verificationToken)
 
     // Don't set as authenticated until email is verified
     throw new Error('Please check your email and verify your account before logging in')
@@ -172,6 +180,16 @@ export const useAuthStore = defineStore('auth', () => {
 
       // Update user as verified
       const updatedUser = await usersStore.updateUser(userId, { emailVerified: true })
+
+      // Force reload users to ensure fresh data
+      await usersStore.loadUsers()
+
+      console.log(
+        'Email verification successful for user:',
+        updatedUser.email,
+        'verified:',
+        updatedUser.emailVerified,
+      )
 
       return updatedUser
     } catch (error) {
