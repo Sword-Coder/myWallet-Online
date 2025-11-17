@@ -6,8 +6,15 @@ import { ref } from 'vue'
 PouchDB.plugin(PouchFind) // <-- enable the .find() method
 
 const localDB = new PouchDB('finance_local')
-const remoteDB = new PouchDB('http://147.182.253.3:5984/mywallet_db', {
-  auth: { username: 'root', password: 'Sharpest2Mind' }, // adjust if needed
+
+// Use environment variables for database configuration
+const couchDBUrl = import.meta.env.VITE_COUCHDB_URL || 'https://server.themission.site'
+const dbName = import.meta.env.VITE_COUCHDB_DB_NAME || 'mywallet_db'
+const dbUsername = import.meta.env.VITE_COUCHDB_USERNAME || 'root'
+const dbPassword = import.meta.env.VITE_COUCHDB_PASSWORD || 'Sharpest2Mind'
+
+const remoteDB = new PouchDB(`${couchDBUrl}/${dbName}`, {
+  auth: { username: dbUsername, password: dbPassword },
 })
 
 // Continuous live sync
