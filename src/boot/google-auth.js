@@ -25,9 +25,7 @@ export default boot(() => {
 
     // You'll need to replace this with your actual Google Client ID
     // Get it from Google Cloud Console -> APIs & Services -> Credentials
-    const clientId =
-      process.env.GOOGLE_CLIENT_ID ||
-      '276214183397-k18qbgohe6hr93ojmudhokpka4kgabl6.apps.googleusercontent.com'
+    const clientId = process.env.GOOGLE_CLIENT_ID
 
     window.google.accounts.id.initialize({
       client_id: clientId,
