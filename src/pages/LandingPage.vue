@@ -75,6 +75,20 @@
         </div>
       </div>
     </div>
+
+    <!-- Floating Action Button for Signup -->
+    <div class="floating-signup-btn">
+      <q-btn
+        fab
+        icon="person_add"
+        color="primary"
+        size="md"
+        @click="$router.push('/signup')"
+        class="signup-fab"
+      >
+        <q-tooltip>Sign Up</q-tooltip>
+      </q-btn>
+    </div>
   </div>
 </template>
 
@@ -230,6 +244,23 @@ onMounted(() => {
 
 .cta-btn {
   min-width: 150px;
+}
+
+.floating-signup-btn {
+  position: fixed;
+  bottom: 18px;
+  right: 18px;
+  z-index: 1000;
+}
+
+.signup-fab {
+  box-shadow: 0 4px 20px rgba(77, 147, 78, 0.4);
+  transition: all 0.3s ease;
+}
+
+.signup-fab:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 25px rgba(77, 147, 78, 0.6);
 }
 
 @media (max-width: 768px) {

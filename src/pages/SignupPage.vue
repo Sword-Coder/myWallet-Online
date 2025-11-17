@@ -1,4 +1,19 @@
 <template>
+  <!-- Home Button -->
+  <div class="home-button-container">
+    <q-btn
+      flat
+      round
+      color="primary"
+      icon="home"
+      size="md"
+      @click="$router.push('/landing')"
+      class="home-btn"
+    >
+      <q-tooltip>Home</q-tooltip>
+    </q-btn>
+  </div>
+
   <div class="flex flex-center" style="min-height: 100vh">
     <q-card class="q-pa-lg" style="min-width: 400px">
       <q-card-section>
@@ -154,5 +169,23 @@ async function handleSignup() {
 
 .google-button-container > div {
   margin: 0 auto;
+}
+
+.home-button-container {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 1000;
+}
+
+.home-btn {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.home-btn:hover {
+  transform: scale(1.1);
+  background: rgba(255, 255, 255, 1);
 }
 </style>
