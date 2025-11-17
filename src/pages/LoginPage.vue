@@ -16,7 +16,9 @@
 
         <!-- Google Login Button -->
         <div class="q-mb-md">
+          <div id="google-login-button" class="google-button-container"></div>
           <q-btn
+            v-if="!googleAuthLoaded"
             color="white"
             text-color="dark"
             class="full-width"
@@ -60,7 +62,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from 'src/stores/auth'
 import { useQuasar } from 'quasar'
@@ -75,6 +77,27 @@ const form = ref({
 })
 const loading = ref(false)
 const googleLoading = ref(false)
+const googleAuthLoaded = ref(false)
+
+onMounted(() => {
+  // Check if Google Auth is loaded and render the button
+  const checkGoogleAuth = () => {
+    if (window.google && window.google.accounts && window.google.accounts.id) {
+      googleAuthLoaded.value = true
+      window.google.accounts.id.renderButton(document.getElementById('google-login-button'), {
+        theme: 'outline',
+        size: 'large',
+        width: '100%',
+        text: 'signin_with',
+        ux_mode: 'popup',
+      })
+    } else {
+      // Retry after a short delay
+      setTimeout(checkGoogleAuth, 100)
+    }
+  }
+  checkGoogleAuth()
+})
 
 async function handleGoogleLogin() {
   if (!authStore.isOnline) {
@@ -127,3 +150,17 @@ async function handleLogin() {
   }
 }
 </script>
+
+<style scoped>
+.google-button-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  min-height: 44px; /* Google button minimum height */
+}
+
+.google-button-container > div {
+  margin: 0 auto;
+}
+</style>

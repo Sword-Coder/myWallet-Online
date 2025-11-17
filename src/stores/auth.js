@@ -12,6 +12,27 @@ export const useAuthStore = defineStore('auth', () => {
   const { initializeUserData } = useUserData()
   const { sendWelcomeEmail } = useEmail()
 
+  // Handle Google Identity Services response
+  const handleGoogleAuth = async (response) => {
+    try {
+      const payload = JSON.parse(atob(response.credential.split('.')[1]))
+      const userInfo = {
+        email: payload.email,
+        name: payload.name,
+        picture: payload.picture,
+      }
+      await loginWithGoogle(userInfo)
+      // Navigate to home after successful login
+      window.location.href = '/#/home'
+    } catch (error) {
+      console.error('Google auth failed:', error)
+      throw error
+    }
+  }
+
+  // Set global handler for GIS callback
+  window.handleGoogleAuth = handleGoogleAuth
+
   // Monitor online status
   window.addEventListener('online', () => {
     isOnline.value = true
@@ -21,23 +42,15 @@ export const useAuthStore = defineStore('auth', () => {
     isOnline.value = false
   })
 
-  async function loginWithGoogle() {
+  async function loginWithGoogle(userInfo) {
     if (!isOnline.value) {
       throw new Error('You must be online to sign in with Google')
     }
 
     try {
-      // Get the Google Auth instance from global reference
-      const googleAuthInstance = window.$googleAuth
-      if (!googleAuthInstance) {
-        throw new Error('Google Auth not available')
-      }
-
-      // Use the correct method for this library
-      const userInfo = await googleAuthInstance.signIn()
-
       // Check if user exists in database
       let dbUser = await usersStore.findUserByEmail(userInfo.email)
+      let isNewUser = false
 
       if (!dbUser) {
         // Create new user
@@ -48,8 +61,19 @@ export const useAuthStore = defineStore('auth', () => {
           provider: 'google',
           emailVerified: true, // Google accounts are pre-verified
         })
+        isNewUser = true
+      } else {
+        // Update existing user with Google info and verify email
+        dbUser = await usersStore.updateUser(dbUser._id, {
+          name: userInfo.name,
+          picture: userInfo.picture,
+          provider: 'google',
+          emailVerified: true, // Verify email when using Google
+        })
+      }
 
-        // Initialize default user data
+      if (isNewUser) {
+        // Initialize default user data for new users
         await initializeUserData(dbUser._id)
 
         // Send welcome email for new Google users
@@ -73,9 +97,9 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function signupWithGoogle() {
+  async function signupWithGoogle(userInfo) {
     // For signup, we'll use the same Google flow
-    return await loginWithGoogle()
+    return await loginWithGoogle(userInfo)
   }
 
   async function login(email, password) {
