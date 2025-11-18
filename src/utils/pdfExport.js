@@ -15,18 +15,18 @@ export function formatDateForPDF(dateStr, timeStr) {
   const date = new Date(year, month - 1, day, hours, minutes)
 
   const months = [
-    'January',
-    'February',
-    'March',
-    'April',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
     'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ]
 
   const monthName = months[date.getMonth()]
@@ -58,12 +58,19 @@ export function formatTypeForPDF(kind) {
 }
 
 /**
- * Format amount for PDF with currency symbol
+ * Format amount for PDF with currency symbol - compatible version
  * @param {number} amount
  * @returns {string} formatted amount
  */
 export function formatAmountForPDF(amount) {
-  return `₱${Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const numAmount = Number(amount) || 0
+  const formattedAmount = numAmount.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+
+  // Use "P" instead of ₱ symbol for better PDF compatibility
+  return `P ${formattedAmount}`
 }
 
 /**
@@ -77,6 +84,18 @@ export function getAccountNameForPDF(walletId, wallets) {
 
   const wallet = wallets.find((w) => w._id === walletId)
   return wallet ? wallet.name : 'Cash'
+}
+
+/**
+ * Truncate text to fit in PDF cell
+ * @param {string} text
+ * @param {number} maxLength
+ * @returns {string} truncated text
+ */
+export function truncateTextForPDF(text, maxLength = 30) {
+  if (!text) return ''
+  if (text.length <= maxLength) return text
+  return text.substring(0, maxLength - 3) + '...'
 }
 
 /**
@@ -104,22 +123,25 @@ export function generatePDFFilename() {
  */
 export function exportToPDF(transactions, wallets, userInfo = {}) {
   try {
-    const doc = new jsPDF()
-    const pageWidth = doc.internal.pageSize.width
-    const pageHeight = doc.internal.pageSize.height
+    const doc = new jsPDF('p', 'mm', 'a4') // Portrait, millimeters, A4
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const pageHeight = doc.internal.pageSize.getHeight()
+
+    // Add support for Unicode characters by setting font
+    doc.setFont('helvetica')
 
     // Header with myWallet branding
     doc.setFillColor(77, 147, 78) // Primary green color
-    doc.rect(0, 0, pageWidth, 40, 'F')
+    doc.rect(0, 0, pageWidth, 25, 'F')
 
     doc.setTextColor(255, 255, 255)
-    doc.setFontSize(24)
+    doc.setFontSize(20)
     doc.setFont('helvetica', 'bold')
-    doc.text('myWallet', 20, 25)
+    doc.text('myWallet', 15, 16)
 
-    doc.setFontSize(12)
+    doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
-    doc.text('Financial Report', 20, 35)
+    doc.text('Financial Report', 15, 21)
 
     // Report generation info
     const currentDate = new Date().toLocaleDateString('en-US', {
@@ -128,40 +150,40 @@ export function exportToPDF(transactions, wallets, userInfo = {}) {
       day: 'numeric',
     })
 
-    doc.text(`Generated: ${currentDate}`, pageWidth - 20, 25, { align: 'right' })
+    doc.text(`Generated: ${currentDate}`, pageWidth - 15, 16, { align: 'right' })
 
     if (userInfo.name) {
-      doc.text(`User: ${userInfo.name}`, pageWidth - 20, 35, { align: 'right' })
+      doc.text(`User: ${userInfo.name}`, pageWidth - 15, 21, { align: 'right' })
     }
 
     // Summary section
-    let currentY = 60
+    let currentY = 35
     doc.setTextColor(0, 0, 0)
-    doc.setFontSize(16)
+    doc.setFontSize(14)
     doc.setFont('helvetica', 'bold')
-    doc.text('Summary', 20, currentY)
+    doc.text('Summary', 15, currentY)
 
-    currentY += 10
+    currentY += 8
 
     // Calculate totals
     const incomeTotal = transactions
       .filter((t) => t.kind === 'income')
-      .reduce((sum, t) => sum + t.amount, 0)
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
     const expenseTotal = transactions
       .filter((t) => t.kind === 'expense')
-      .reduce((sum, t) => sum + t.amount, 0)
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
 
     const netTotal = incomeTotal - expenseTotal
 
-    // Summary data
+    // Summary data - ensure amounts are properly formatted
     const summaryData = [
       ['Income', formatAmountForPDF(incomeTotal)],
       ['Expenses', formatAmountForPDF(expenseTotal)],
       ['Net Total', formatAmountForPDF(netTotal)],
     ]
 
-    // Create summary table
+    // Create summary table with proper column widths
     autoTable(doc, {
       startY: currentY,
       head: [['Category', 'Amount']],
@@ -171,34 +193,41 @@ export function exportToPDF(transactions, wallets, userInfo = {}) {
         fillColor: [248, 249, 250],
         textColor: [0, 0, 0],
         fontStyle: 'bold',
+        fontSize: 10,
+      },
+      bodyStyles: {
+        fontSize: 10,
       },
       columnStyles: {
-        0: { cellWidth: 60 },
-        1: { cellWidth: 40, halign: 'right' },
+        0: { cellWidth: 40 }, // Category column
+        1: { cellWidth: 35, halign: 'right' }, // Amount column - right aligned
       },
-      margin: { left: 20, right: 20 },
+      margin: { left: 15, right: 15 },
+      tableWidth: 75, // Ensure table fits
     })
 
-    currentY = doc.lastAutoTable.finalY + 20
+    currentY = doc.lastAutoTable.finalY + 10
 
     // Transactions section
-    doc.setFontSize(16)
+    doc.setFontSize(14)
     doc.setFont('helvetica', 'bold')
-    doc.text('Transaction History', 20, currentY)
+    doc.text('Transaction History', 15, currentY)
 
-    currentY += 10
+    currentY += 8
 
-    // Prepare table data
-    const tableData = transactions.map((transaction) => [
-      formatDateForPDF(transaction.date, transaction.time),
-      formatTypeForPDF(transaction.kind).text,
-      formatAmountForPDF(transaction.amount),
-      transaction.category || 'N/A',
-      getAccountNameForPDF(transaction.walletId, wallets),
-      transaction.notes || '',
-    ])
+    // Prepare table data with proper formatting
+    const tableData = transactions.map((transaction) => {
+      const dateTime = formatDateForPDF(transaction.date, transaction.time)
+      const type = formatTypeForPDF(transaction.kind).text
+      const amount = formatAmountForPDF(transaction.amount)
+      const category = truncateTextForPDF(transaction.category || 'N/A', 15)
+      const account = truncateTextForPDF(getAccountNameForPDF(transaction.walletId, wallets), 10)
+      const notes = truncateTextForPDF(transaction.notes || '', 25) // Truncate notes to fit
 
-    // Create transactions table
+      return [dateTime, type, amount, category, account, notes]
+    })
+
+    // Create transactions table with better column distribution
     autoTable(doc, {
       startY: currentY,
       head: [['Date & Time', 'Type', 'Amount', 'Category', 'Account', 'Notes']],
@@ -208,23 +237,27 @@ export function exportToPDF(transactions, wallets, userInfo = {}) {
         fillColor: [77, 147, 78],
         textColor: [255, 255, 255],
         fontStyle: 'bold',
+        fontSize: 9,
+      },
+      bodyStyles: {
+        fontSize: 8,
+        cellPadding: 1,
       },
       columnStyles: {
-        0: { cellWidth: 45 },
-        1: { cellWidth: 25 },
-        2: { cellWidth: 30, halign: 'right' },
-        3: { cellWidth: 35 },
-        4: { cellWidth: 30 },
-        5: { cellWidth: 35 },
+        0: { cellWidth: 35 }, // Date & Time
+        1: { cellWidth: 20 }, // Type
+        2: { cellWidth: 25 }, // Amount
+        3: { cellWidth: 25 }, // Category
+        4: { cellWidth: 20 }, // Account
+        5: { cellWidth: 35 }, // Notes
       },
       styles: {
-        fontSize: 8,
-        cellPadding: 2,
+        overflow: 'linebreak', // Allow text to wrap within cells
+        valign: 'top',
+        minCellHeight: 6, // Ensure minimum cell height
       },
-      alternateRowStyles: {
-        fillColor: [248, 249, 250],
-      },
-      margin: { left: 20, right: 20 },
+      margin: { left: 15, right: 15 },
+      tableWidth: 160, // Ensure table fits within page
       didDrawCell: function (data) {
         // Color code transaction types
         if (data.column.index === 1 && data.section === 'body') {
