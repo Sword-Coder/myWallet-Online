@@ -18,6 +18,8 @@
     "@quasar/extras": "^1.16.4",
     "chart.js": "^4.5.0",
     "crypto-js": "^4.2.0",
+    "jspdf": "^3.0.3",
+    "jspdf-autotable": "^5.0.2",
     "pinia": "^3.0.3",
     "pouchdb-browser": "^9.0.0",
     "pouchdb-find": "^9.0.0",
