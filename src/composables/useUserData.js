@@ -9,9 +9,9 @@ export function useUserData() {
       _id: `wallet_${Date.now()}_default`,
       type: 'wallet',
       userId: userId,
-      name: 'Main Wallet',
+      name: 'My Wallet',
       balance: 0,
-      currency: 'USD',
+      currency: 'PHP',
       createdAt: new Date().toISOString(),
     }
 
