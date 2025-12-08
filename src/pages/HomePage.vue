@@ -102,7 +102,7 @@
         <div class="row items-center justify-between">
           <div>
             <div class="text-subtitle2">
-              {{ getCategoryName(tx.categoryId) || 'Uncategorized' }}
+              {{ getCategoryName(tx.categoryId) }}
             </div>
             <div class="text-caption text-grey">{{ formatDate(tx.datetime) }}</div>
           </div>
@@ -120,6 +120,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useFinancesStore } from 'src/stores/finances'
 import { useUsersStore } from 'src/stores/users'
@@ -136,10 +137,10 @@ const categoriesStore = useCategoriesStore()
 const activeWallet = ref('all')
 const sharedMembers = ref([])
 
-// Computed properties from stores
-const { wallets: storeWallets, totals } = financesStore
-const { currentUser } = usersStore
-const { categories } = categoriesStore
+// State from stores - use storeToRefs to maintain reactivity
+const { wallets: storeWallets, totals } = storeToRefs(financesStore)
+const { currentUser } = storeToRefs(usersStore)
+const { categories } = storeToRefs(categoriesStore)
 
 // Date
 const currentMonth = computed(() =>
@@ -181,11 +182,8 @@ const recentTransactions = computed(() => {
 
 // Helper functions
 function getCategoryName(categoryId) {
-  if (!categories.value || !Array.isArray(categories.value)) {
-    return null
-  }
-  const category = categories.value.find((c) => c._id === categoryId)
-  return category ? category.name : null
+  const category = (categories.value || []).find((c) => c._id === categoryId)
+  return category ? category.name : 'Uncategorized'
 }
 
 function formatDate(datetime) {
@@ -229,9 +227,8 @@ onMounted(async () => {
     }
   }
 
-  // Load all financial data
-  await financesStore.loadAll()
-  await categoriesStore.loadCategories()
+  // Load all financial data concurrently
+  await Promise.all([financesStore.loadAll(), categoriesStore.loadCategories()])
 
   // Set default to 'all' wallets
   if (!activeWallet.value) {
