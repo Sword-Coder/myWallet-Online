@@ -44,7 +44,9 @@
           {{
             activeWallet === 'all'
               ? 'All Wallets'
-              : storeWallets.find((w) => w._id === activeWallet)?.name || 'No wallet selected'
+              : (storeWallets.value && Array.isArray(storeWallets.value)
+                  ? storeWallets.value.find((w) => w._id === activeWallet)?.name
+                  : null) || 'No wallet selected'
           }}
         </div>
         <div class="text-h6" :style="{ color: walletBalance >= 0 ? '#4d934e' : '#dc3545' }">
@@ -52,7 +54,7 @@
         </div>
       </div>
       <q-select
-        v-if="storeWallets.length"
+        v-if="storeWallets.value && storeWallets.value.length > 0"
         v-model="activeWallet"
         :options="walletOptions"
         option-label="name"
@@ -99,8 +101,10 @@
       >
         <div class="row items-center justify-between">
           <div>
-            <div class="text-subtitle2">{{ tx.category || 'Uncategorized' }}</div>
-            <div class="text-caption text-grey">{{ tx.date }}</div>
+            <div class="text-subtitle2">
+              {{ getCategoryName(tx.categoryId) || 'Uncategorized' }}
+            </div>
+            <div class="text-caption text-grey">{{ formatDate(tx.datetime) }}</div>
           </div>
           <div
             :style="{ color: tx.kind === 'income' ? '#4d934e' : '#dc3545' }"
@@ -115,127 +119,154 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useDatabase, useTransactions } from 'src/composables/useDatabase.js'
 import { useFinancesStore } from 'src/stores/finances'
-import { useWalletsStore } from 'src/stores/wallets'
-import { storeToRefs } from 'pinia'
+import { useUsersStore } from 'src/stores/users'
+import { useCategoriesStore } from 'src/stores/categories'
 
-const { localDB } = useDatabase()
-const { getRecentTransactions } = useTransactions()
 const router = useRouter()
 
-// state
-const activeWallet = ref('all') // Default to 'all' wallets
+// Stores
+const financesStore = useFinancesStore()
+const usersStore = useUsersStore()
+const categoriesStore = useCategoriesStore()
+
+// UI state
+const activeWallet = ref('all')
 const sharedMembers = ref([])
 
-// stores
-const store = useFinancesStore()
-const walletsStore = useWalletsStore()
-const { transactions } = storeToRefs(store)
-const { wallets: storeWallets } = storeToRefs(walletsStore)
+// Computed properties from stores
+const { wallets: storeWallets, totals } = financesStore
+const { currentUser } = usersStore
+const { categories } = categoriesStore
 
-// date
+// Date
 const currentMonth = computed(() =>
   new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
 )
 
-// computed
-const walletOptions = computed(() => [{ name: 'All Wallets', _id: 'all' }, ...storeWallets.value])
+// Computed values
+const walletOptions = computed(() => {
+  // Ensure storeWallets is an array before spreading
+  const wallets = storeWallets.value && Array.isArray(storeWallets.value) ? storeWallets.value : []
+  return [{ name: 'All Wallets', _id: 'all' }, ...wallets]
+})
 
 const walletBalance = computed(() => {
-  if (activeWallet.value === 'all') {
-    // Calculate total balance across all wallets
-    return storeWallets.value.reduce((total, wallet) => total + (wallet.balance || 0), 0)
+  // Ensure storeWallets is an array before calling reduce
+  if (!storeWallets.value || !Array.isArray(storeWallets.value)) {
+    return 0
   }
 
-  // Individual wallet balance
+  if (activeWallet.value === 'all') {
+    return storeWallets.value.reduce((total, wallet) => total + (wallet.balance || 0), 0)
+  }
   const wallet = storeWallets.value.find((w) => w._id === activeWallet.value)
   return wallet ? wallet.balance : 0
 })
 
-const incomeTotal = computed(() =>
-  transactions.value.filter((t) => t.kind === 'income').reduce((sum, t) => sum + t.amount, 0),
-)
-const expenseTotal = computed(() =>
-  transactions.value.filter((t) => t.kind === 'expense').reduce((sum, t) => sum + t.amount, 0),
-)
-const netTotal = computed(() => incomeTotal.value - expenseTotal.value)
+const incomeTotal = computed(() => totals.value?.income || 0)
+const expenseTotal = computed(() => totals.value?.expenses || 0)
+const netTotal = computed(() => totals.value?.net || 0)
 
-const recentTransactions = computed(() =>
-  getRecentTransactions(transactions.value, activeWallet.value, 5),
-)
+const recentTransactions = computed(() => {
+  try {
+    return financesStore.getRecentTransactions(5) || []
+  } catch (error) {
+    console.warn('Error getting recent transactions:', error)
+    return []
+  }
+})
+
+// Helper functions
+function getCategoryName(categoryId) {
+  if (!categories.value || !Array.isArray(categories.value)) {
+    return null
+  }
+  const category = categories.value.find((c) => c._id === categoryId)
+  return category ? category.name : null
+}
+
+function formatDate(datetime) {
+  const date = new Date(datetime)
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  })
+}
 
 // Navigation function
 function navigateToTransaction(transaction) {
-  console.log('HomePage navigating to transaction:', {
-    transactionId: transaction._id,
-    walletId: transaction.walletId,
-    transactionCategory: transaction.category,
-    transactionAmount: transaction.amount,
-    transactionIdType: typeof transaction._id,
-    walletIdType: typeof transaction.walletId,
-  })
-
-  const navigationPromise = router.push({
+  router.push({
     name: 'records',
     query: {
       transactionId: transaction._id,
       walletId: transaction.walletId,
     },
   })
-
-  navigationPromise
-    .then(() => {
-      console.log('Navigation successful')
-    })
-    .catch((error) => {
-      console.error('Navigation failed:', error)
-    })
 }
 
 // Shared wallet
 const isSharedWallet = computed(() => {
   if (activeWallet.value === 'all') return false
+  // Ensure storeWallets is an array before calling find
+  if (!storeWallets.value || !Array.isArray(storeWallets.value)) {
+    return false
+  }
   const wallet = storeWallets.value.find((w) => w._id === activeWallet.value)
-  return wallet?.members && wallet.members.length > 1
+  return wallet?.sharedWithUserIds && wallet.sharedWithUserIds.length > 1
 })
 
-async function loadAll() {
-  // Load data from stores
-  await Promise.all([store.loadAll(), walletsStore.loadWallets()])
+// Load data on mount
+onMounted(async () => {
+  // Initialize user if not logged in (for demo purposes)
+  if (!currentUser || !currentUser.value) {
+    try {
+      await usersStore.loginUser('demo@example.com', 'password')
+    } catch (error) {
+      console.warn('Demo login failed:', error)
+    }
+  }
 
-  // Keep default as 'all' wallets
+  // Load all financial data
+  await financesStore.loadAll()
+  await categoriesStore.loadCategories()
+
+  // Set default to 'all' wallets
   if (!activeWallet.value) {
     activeWallet.value = 'all'
   }
+})
 
-  // For shared wallet info, we need a specific wallet selected
-  if (activeWallet.value && activeWallet.value !== 'all') {
-    const wallet = storeWallets.value.find((w) => w._id === activeWallet.value)
-    if (wallet?.members) {
-      sharedMembers.value = wallet.members
+// Watch for active wallet changes
+watch(activeWallet, (newWallet) => {
+  if (newWallet && newWallet !== 'all') {
+    // Ensure storeWallets is an array before calling find
+    const wallet =
+      storeWallets.value && Array.isArray(storeWallets.value)
+        ? storeWallets.value.find((w) => w._id === newWallet)
+        : null
+    if (wallet?.sharedWithUserIds) {
+      sharedMembers.value = wallet.sharedWithUserIds
     } else {
       sharedMembers.value = []
     }
   } else {
     sharedMembers.value = []
   }
-}
-
-onMounted(async () => {
-  await Promise.all([store.loadAll(), walletsStore.loadWallets()])
-
-  // Set default to 'all' wallets
-  if (!activeWallet.value) {
-    activeWallet.value = 'all'
-  }
-
-  // Watch for changes
-  store.watchChanges()
-  localDB.changes({ since: 'now', live: true, include_docs: true }).on('change', loadAll)
 })
+
+// Watch for wallet changes to update active wallet
+watch(
+  storeWallets,
+  (newWallets) => {
+    if (newWallets.length > 0 && !activeWallet.value) {
+      activeWallet.value = 'all'
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <style scoped>
@@ -256,6 +287,7 @@ onMounted(async () => {
 .transaction-card {
   cursor: pointer;
   transition: all 0.2s ease;
+  border: 1px solid transparent;
   border-left: 4px solid transparent;
 }
 
