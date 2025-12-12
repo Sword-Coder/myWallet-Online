@@ -72,6 +72,7 @@ export default defineConfig((/* ctx */) => {
 
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#devserver
     devServer: {
+      port: 9000, // Use port 9000 for Google OAuth compatibility
       // https: true,
       open: true, // opens browser window automatically
       headers: {
