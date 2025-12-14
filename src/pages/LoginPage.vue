@@ -155,11 +155,30 @@ async function handleLogin() {
     })
     router.push('/home')
   } catch (error) {
-    $q.notify({
-      color: 'negative',
-      message: error.message || 'Login failed',
-      icon: 'error',
-    })
+    // Handle specific Google user error with better UX
+    if (error.message.includes('Google Sign-in')) {
+      $q.notify({
+        color: 'warning',
+        message: 'This account uses Google Sign-in. Please use the Google login button above.',
+        icon: 'info',
+        timeout: 5000,
+        actions: [
+          {
+            label: 'Use Google Login',
+            color: 'white',
+            handler: () => {
+              handleGoogleLogin()
+            },
+          },
+        ],
+      })
+    } else {
+      $q.notify({
+        color: 'negative',
+        message: error.message || 'Login failed',
+        icon: 'error',
+      })
+    }
   } finally {
     loading.value = false
   }
