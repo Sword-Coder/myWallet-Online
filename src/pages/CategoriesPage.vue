@@ -6,6 +6,15 @@
         <div class="text-h5 text-weight-bold">Categories</div>
         <div class="text-caption text-grey">Manage your transaction categories</div>
       </div>
+
+      <!-- Add Category Button -->
+      <q-btn
+        color="primary"
+        icon="add"
+        label="Add Category"
+        @click="showAddDialog = true"
+        unelevated
+      />
     </div>
 
     <!-- Expense Categories Section -->
@@ -92,20 +101,20 @@
       </q-card-section>
     </q-card>
 
-    <!-- Add New Category Dialog -->
-    <q-dialog v-model="showAddDialog" maximized>
-      <q-card class="add-category-dialog">
+    <!-- Add/Edit Category Dialog -->
+    <q-dialog v-model="showAddDialog" persistent>
+      <q-card style="min-width: 500px; max-width: 90vw">
         <q-card-section class="dialog-header">
           <div class="row items-center">
-            <div class="text-h6">Add New Category</div>
+            <div class="text-h6">{{ editingCategory ? 'Edit Category' : 'Add New Category' }}</div>
             <q-space />
-            <q-btn icon="close" flat round dense v-close-popup />
+            <q-btn icon="close" flat round dense v-close-popup @click="resetForm" />
           </div>
         </q-card-section>
 
-        <q-card-section class="dialog-content">
+        <q-card-section class="q-gutter-md">
           <!-- Category Type Selection -->
-          <div class="row q-gutter-sm q-mb-lg">
+          <div class="row q-gutter-sm">
             <q-btn
               :color="form.kind === 'income' ? 'positive' : 'grey-3'"
               :text-color="form.kind === 'income' ? 'white' : 'positive'"
@@ -125,15 +134,21 @@
           </div>
 
           <!-- Category Name Input -->
-          <div class="q-mb-lg">
-            <q-input
-              v-model="form.name"
-              label="Category Name"
-              filled
-              placeholder="Enter category name"
-              :rules="[(val) => (val && val.length > 0) || 'Category name is required']"
-            />
-          </div>
+          <q-input
+            v-model="form.name"
+            label="Category Name"
+            filled
+            placeholder="Enter category name"
+            :rules="[(val) => (val && val.length > 0) || 'Category name is required']"
+          />
+
+          <!-- Description Input -->
+          <q-input
+            v-model="form.description"
+            label="Description (Optional)"
+            filled
+            placeholder="Enter category description"
+          />
 
           <!-- Icon Selection -->
           <div class="icon-selection-section">
@@ -164,45 +179,43 @@
           </div>
         </q-card-section>
 
-        <q-card-actions class="dialog-footer">
-          <q-btn flat label="Cancel" v-close-popup class="dialog-cancel-btn" />
+        <q-card-actions align="right">
+          <q-btn flat label="Cancel" color="grey" v-close-popup @click="resetForm" />
           <q-btn
             color="primary"
-            label="Save Category"
+            :label="editingCategory ? 'Update' : 'Save'"
             @click="saveCategory"
             :disable="!form.name || !form.icon"
-            class="dialog-save-btn"
           />
         </q-card-actions>
       </q-card>
     </q-dialog>
 
-    <!-- Centered Add Category Button -->
-    <div class="add-category-section">
-      <q-btn
-        color="primary"
-        icon="add"
-        label="Add Category"
-        @click="showAddDialog = true"
-        unelevated
-        class="add-category-btn-centered"
-        size="lg"
-      />
+    <!-- Empty State -->
+    <div v-if="!categories.length" class="text-grey text-center q-mt-lg">
+      No categories found. Add your first category to get started!
     </div>
   </q-page>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useCategoriesStore } from 'src/stores/categories.js'
-import { storeToRefs } from 'pinia'
+import { useQuasar } from 'quasar'
+import { useCategoriesStore } from 'src/stores/categories'
+import { useUsersStore } from 'src/stores/users'
 
-// Store
+// Stores
+const $q = useQuasar()
 const categoriesStore = useCategoriesStore()
-const { categories } = storeToRefs(categoriesStore)
+const usersStore = useUsersStore()
+
+// State
+const { categories } = categoriesStore
+const { currentUser } = usersStore
 
 // Dialog state
 const showAddDialog = ref(false)
+const editingCategory = ref(null)
 
 // Form data
 const form = ref({
@@ -210,11 +223,14 @@ const form = ref({
   kind: 'expense',
   icon: '',
   color: '',
+  description: '',
+  isShared: false,
+  sharedWithUserIds: [],
 })
 
 // Available icons for selection
 const availableIcons = ref([
-  // Free icons (including all icons used by default categories)
+  // Free icons
   { name: 'volunteer_activism', label: 'Tithes', kind: 'expense', locked: false, unlocked: true },
   { name: 'local_offer', label: 'Offerings', kind: 'expense', locked: false, unlocked: true },
   { name: 'shopping_cart', label: 'Shopping', kind: 'expense', locked: false, unlocked: true },
@@ -246,7 +262,7 @@ const availableIcons = ref([
   { name: 'account_balance', label: 'Banking', kind: 'income', locked: false, unlocked: true },
   { name: 'category', label: 'General', kind: 'expense', locked: false, unlocked: true },
 
-  // Additional free icons (no duplicates)
+  // Additional free icons
   { name: 'attach_money', label: 'Income', kind: 'income', locked: false, unlocked: true },
   { name: 'payment', label: 'Bills & Payments', kind: 'expense', locked: false, unlocked: true },
   { name: 'credit_card', label: 'Credit Cards', kind: 'expense', locked: false, unlocked: true },
@@ -264,7 +280,7 @@ const availableIcons = ref([
   { name: 'kitchen', label: 'Groceries', kind: 'expense', locked: false, unlocked: true },
   { name: 'cleaning_services', label: 'Services', kind: 'expense', locked: false, unlocked: true },
 
-  // Pro locked icons (premium features)
+  // Pro locked icons
   { name: 'pets', label: 'Pets', kind: 'expense', locked: true, unlocked: false },
   { name: 'sports_soccer', label: 'Sports', kind: 'expense', locked: true, unlocked: false },
   { name: 'music_note', label: 'Music', kind: 'expense', locked: true, unlocked: false },
@@ -276,15 +292,17 @@ const availableIcons = ref([
 ])
 
 // Computed properties
-const expenseCategories = computed(() => categories.value.filter((cat) => cat.kind === 'expense'))
+const expenseCategories = computed(() => categories.filter((cat) => cat.kind === 'expense'))
 
-const incomeCategories = computed(() => categories.value.filter((cat) => cat.kind === 'income'))
+const incomeCategories = computed(() => categories.filter((cat) => cat.kind === 'income'))
 
 // Methods
 function selectIcon(icon) {
   if (icon.locked && !icon.unlocked) {
-    // Show pro upgrade message
-    console.log('Pro feature - upgrade required')
+    $q.notify({
+      type: 'warning',
+      message: 'This is a Pro feature. Upgrade to unlock additional icons.',
+    })
     return
   }
 
@@ -292,40 +310,77 @@ function selectIcon(icon) {
   form.value.color = form.value.kind === 'expense' ? 'red-5' : 'green-5'
 }
 
-function saveCategory() {
-  if (!form.value.name || !form.value.icon) return
+async function saveCategory() {
+  if (!form.value.name || !form.value.icon) {
+    $q.notify({ type: 'warning', message: 'Please fill in all required fields' })
+    return
+  }
 
-  const success = categoriesStore.addCategory({
-    name: form.value.name,
-    kind: form.value.kind,
-    icon: form.value.icon,
-    color: form.value.color,
-    description: `${form.value.kind} category`,
-  })
-
-  if (success) {
-    // Reset form and close dialog
-    form.value = {
-      name: '',
-      kind: 'expense',
-      icon: '',
-      color: '',
+  try {
+    const categoryData = {
+      name: form.value.name,
+      kind: form.value.kind,
+      icon: form.value.icon,
+      color: form.value.color,
+      description: form.value.description || `${form.value.kind} category`,
+      isShared: form.value.isShared,
+      sharedWithUserIds: form.value.sharedWithUserIds,
     }
+
+    if (editingCategory.value) {
+      await categoriesStore.updateCategory(editingCategory.value._id, categoryData)
+      $q.notify({ type: 'positive', message: 'Category updated successfully!' })
+    } else {
+      await categoriesStore.addCategory(categoryData)
+      $q.notify({ type: 'positive', message: 'Category added successfully!' })
+    }
+
+    resetForm()
     showAddDialog.value = false
-  } else {
-    // Show error message for duplicate category
-    console.log('Category already exists')
-    // You could add a notification here using Quasar's notify
+  } catch (error) {
+    console.error('Error saving category:', error)
+    $q.notify({ type: 'negative', message: 'Failed to save category' })
   }
 }
 
 function editCategory(category) {
-  // For now, just log - can be expanded later
-  console.log('Edit category:', category)
+  editingCategory.value = category
+  form.value = {
+    name: category.name,
+    kind: category.kind,
+    icon: category.icon,
+    color: category.color,
+    description: category.description || '',
+    isShared: category.isShared || false,
+    sharedWithUserIds: category.sharedWithUserIds || [],
+  }
+  showAddDialog.value = true
 }
 
-onMounted(() => {
-  categoriesStore.loadCategories()
+function resetForm() {
+  form.value = {
+    name: '',
+    kind: 'expense',
+    icon: '',
+    color: '',
+    description: '',
+    isShared: false,
+    sharedWithUserIds: [],
+  }
+  editingCategory.value = null
+}
+
+// Load data on mount
+onMounted(async () => {
+  // Check if user is authenticated
+  if (!currentUser.value) {
+    // Redirect to login if no user is logged in
+    console.warn('No user logged in - categories require authentication')
+    return
+  }
+
+  // Load categories
+  await categoriesStore.loadCategories()
 })
 </script>
 
@@ -334,13 +389,6 @@ onMounted(() => {
 .q-page {
   background: #f8f9fa;
   min-height: 100vh;
-}
-
-/* Header Styles */
-.add-category-btn {
-  border-radius: 8px;
-  padding: 8px 16px;
-  font-weight: 600;
 }
 
 /* Category Cards */
@@ -355,24 +403,11 @@ onMounted(() => {
 }
 
 /* Dialog Styles */
-.add-category-dialog {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  max-height: 100vh;
-}
-
 .dialog-header {
   background: linear-gradient(135deg, #4d934e 0%, #6ba06f 100%);
   color: white;
   padding: 16px 24px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.dialog-content {
-  flex: 1;
-  padding: 24px;
-  overflow-y: auto;
 }
 
 /* Icon Selection Grid */
@@ -385,6 +420,8 @@ onMounted(() => {
   grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
   gap: 12px;
   margin-top: 16px;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .icon-option {
@@ -440,55 +477,6 @@ onMounted(() => {
   font-weight: 500;
 }
 
-/* Dialog Footer */
-.dialog-footer {
-  background: #f8f9fa;
-  border-top: 1px solid #e9ecef;
-  padding: 16px 24px;
-  gap: 12px;
-}
-
-.dialog-cancel-btn {
-  color: #6c757d;
-  min-width: 120px;
-}
-
-.dialog-save-btn {
-  background: #4d934e !important;
-  color: white;
-  min-width: 120px;
-}
-
-/* Responsive Design */
-@media (max-width: 768px) {
-  .icon-grid {
-    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
-    gap: 8px;
-  }
-
-  .icon-option {
-    padding: 8px;
-  }
-
-  .dialog-content {
-    padding: 16px;
-  }
-
-  .dialog-header {
-    padding: 12px 16px;
-  }
-
-  .dialog-footer {
-    padding: 12px 16px;
-    flex-direction: column;
-  }
-
-  .dialog-footer .q-btn {
-    width: 100%;
-    margin-bottom: 8px;
-  }
-}
-
 /* Category Section Headers */
 .q-card-section {
   padding: 16px 20px !important;
@@ -511,108 +499,15 @@ onMounted(() => {
   min-width: 60px;
 }
 
-/* Custom Scrollbar Styling */
-.q-page {
-  scrollbar-width: thin;
-  scrollbar-color: #4d934e #f1f1f1;
-}
-
-/* Webkit browsers (Chrome, Safari, Edge) */
-.q-page::-webkit-scrollbar {
-  width: 8px;
-}
-
-.q-page::-webkit-scrollbar-track {
-  background: #f8f9fa;
-  border-radius: 4px;
-}
-
-.q-page::-webkit-scrollbar-thumb {
-  background: linear-gradient(135deg, #4d934e 0%, #6ba06f 100%);
-  border-radius: 4px;
-  border: 1px solid #f8f9fa;
-}
-
-.q-page::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(135deg, #3d7e3f 0%, #5a8a5f 100%);
-}
-
-/* For dialog content areas */
-.dialog-content {
-  scrollbar-width: thin;
-  scrollbar-color: #4d934e #f1f1f1;
-}
-
-.dialog-content::-webkit-scrollbar {
-  width: 6px;
-}
-
-.dialog-content::-webkit-scrollbar-track {
-  background: #f8f9fa;
-  border-radius: 3px;
-}
-
-.dialog-content::-webkit-scrollbar-thumb {
-  background: linear-gradient(135deg, #4d934e 0%, #6ba06f 100%);
-  border-radius: 3px;
-  border: 1px solid #f8f9fa;
-}
-
-.dialog-content::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(135deg, #3d7e3f 0%, #5a8a5f 100%);
-}
-
-/* Icon grid scrollbar */
-.icon-grid {
-  max-height: 300px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: #4d934e #e9ecef;
-}
-
-.icon-grid::-webkit-scrollbar {
-  width: 4px;
-}
-
-.icon-grid::-webkit-scrollbar-track {
-  background: #e9ecef;
-  border-radius: 2px;
-}
-
-.icon-grid::-webkit-scrollbar-thumb {
-  background: linear-gradient(135deg, #4d934e 0%, #6ba06f 100%);
-  border-radius: 2px;
-}
-
-/* Centered Add Category Section */
-.add-category-section {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 32px 16px;
-  margin-top: 24px;
-}
-
-.add-category-btn-centered {
-  border-radius: 12px;
-  padding: 16px 32px;
-  font-weight: 600;
-  box-shadow: 0 4px 12px rgba(77, 147, 78, 0.3);
-  min-width: 220px;
-  background: linear-gradient(135deg, #4d934e 0%, #6ba06f 100%);
-}
-
-/* Mobile responsive for centered button */
+/* Responsive Design */
 @media (max-width: 768px) {
-  .add-category-section {
-    padding: 24px 16px;
-    margin-top: 16px;
+  .icon-grid {
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 8px;
   }
 
-  .add-category-btn-centered {
-    width: 100%;
-    max-width: 300px;
-    padding: 14px 24px;
+  .icon-option {
+    padding: 8px;
   }
 }
 </style>
