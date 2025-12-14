@@ -36,31 +36,47 @@
           <div class="row justify-between items-center q-mb-xs">
             <div>
               <div class="text-subtitle2 text-weight-medium">
-                {{ b.category }}
+                {{ getCategoryName(b.categoryId) }}
               </div>
               <div class="text-caption text-grey">
-                <template v-if="b.type === 'fixed'">
+                <template v-if="b.amount > 0">
                   ₱{{ Number(b.amount || 0).toLocaleString() }} limit
                 </template>
-                <template v-else> {{ b.percent }}% of income </template>
+                <template v-else-if="b.percent > 0"> {{ b.percent }}% of income </template>
+                <template v-else> No budget set </template>
               </div>
             </div>
 
             <div class="text-subtitle2 text-right">
-              <template v-if="b.type === 'fixed'">
-                ₱{{ Number(b.spent || 0).toLocaleString() }} / ₱{{
-                  Number(b.amount || 0).toLocaleString()
-                }}
+              <template v-if="isTithesCategory(b)">
+                <!-- Special display for Tithes: show actual vs expected -->
+                <div class="text-right">
+                  <div>
+                    ₱{{ Number(b.spent || 0).toLocaleString() }} / Expected ₱{{
+                      Number(getExpectedTithes()).toLocaleString()
+                    }}
+                  </div>
+                  <div class="text-caption text-grey">(10% of salary)</div>
+                </div>
               </template>
               <template v-else>
-                {{ Number(b.spent || 0).toLocaleString() }} / {{ b.percent }}%
+                <!-- Debug info for non-tithes budgets -->
+                <template v-if="b.amount > 0">
+                  ₱{{ Number(b.spent || 0).toLocaleString() }} / ₱{{
+                    Number(b.amount || 0).toLocaleString()
+                  }}
+                </template>
+                <template v-else-if="b.percent > 0">
+                  ₱{{ Number(b.spent || 0).toLocaleString() }} / {{ b.percent }}%
+                </template>
+                <template v-else> ₱{{ Number(b.spent || 0).toLocaleString() }} </template>
               </template>
             </div>
           </div>
 
           <q-linear-progress
-            :value="b.progress"
-            :color="b.spent > b.amount ? 'negative' : 'primary'"
+            :value="getBudgetProgress(b)"
+            :color="isBudgetExceeded(b) ? 'negative' : 'primary'"
             rounded
             size="10px"
           />
@@ -83,31 +99,25 @@
         </q-card-section>
 
         <q-card-section class="q-gutter-md">
-          <!-- Wallet Selector -->
-          <q-select
-            filled
-            v-model="form.wallet_id"
-            :options="walletOptions"
-            label="Wallet"
-            emit-value
-            map-options
-          />
-
           <!-- Category Selector -->
           <q-select
             filled
             use-input
             input-debounce="0"
-            v-model="form.category"
+            v-model="form.categoryId"
             :options="categoryOptions"
+            option-label="name"
+            option-value="_id"
             label="Category"
+            emit-value
+            map-options
             hint="Select or type to create"
-            @new-value="(val) => (form.category = val)"
+            @new-value="createNewCategory"
           />
 
           <!-- Budget Type -->
           <q-option-group
-            v-model="form.type"
+            v-model="form.budgetType"
             :options="[
               { label: 'Fixed Amount (₱)', value: 'fixed' },
               { label: 'Percentage (%)', value: 'percentage' },
@@ -119,7 +129,7 @@
           <!-- Fixed / Percentage Inputs -->
           <q-input
             filled
-            v-if="form.type === 'fixed'"
+            v-if="form.budgetType === 'fixed'"
             v-model.number="form.amount"
             label="Amount (PHP)"
             type="number"
@@ -138,7 +148,7 @@
         </q-card-section>
 
         <q-card-actions align="right">
-          <q-btn flat label="Cancel" color="grey" v-close-popup />
+          <q-btn flat label="Cancel" color="grey" v-close-popup @click="resetForm" />
           <q-btn flat label="Save" color="primary" @click="saveBudget" />
         </q-card-actions>
       </q-card>
@@ -150,151 +160,238 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useQuasar } from 'quasar'
 import { useFinancesStore } from 'src/stores/finances'
-import { useWalletsStore } from 'src/stores/wallets'
-import { useCategoriesStore } from 'src/stores/categories'
 import { useBudgetsStore } from 'src/stores/budgets'
-import { storeToRefs } from 'pinia'
+import { useCategoriesStore } from 'src/stores/categories'
+import { useUsersStore } from 'src/stores/users'
 
-// --- Store setup ---
+// Stores
 const $q = useQuasar()
-const store = useFinancesStore()
-const walletsStore = useWalletsStore()
-const categoriesStore = useCategoriesStore()
+const financesStore = useFinancesStore()
 const budgetsStore = useBudgetsStore()
+const categoriesStore = useCategoriesStore()
+const usersStore = useUsersStore()
 
-const { transactions } = storeToRefs(store)
-const { wallets, activeWallet } = storeToRefs(walletsStore)
-const { categories } = storeToRefs(categoriesStore)
-const { budgets } = storeToRefs(budgetsStore)
+// State from stores
+const { wallets } = financesStore
+const { budgets, calculateExpectedTithes } = budgetsStore
+const { categories, addCategory } = categoriesStore
+const { currentUser } = usersStore
+
+// Tithes-related state
+const expectedTithes = ref(0)
+
+// Dialog state
 const showDialog = ref(false)
 const editingBudget = ref(null)
 const selectedWallet = ref(null)
 
 const form = ref({
-  wallet_id: '',
-  category: '',
-  type: 'fixed',
+  categoryId: '',
+  budgetType: 'fixed',
   amount: 0,
   percent: 0,
 })
 
-// --- Computed values ---
+// Computed values
 const currentMonth = computed(() =>
   new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
 )
 
-const walletOptions = computed(() => wallets.value.map((w) => ({ label: w.name, value: w._id })))
-
-const categoryOptions = computed(
-  () => categories.value.map((c) => ({ label: c.name, value: c.name })) || [],
+const walletOptions = computed(() =>
+  (wallets.value || []).map((w) => ({ label: w.name, _id: w._id })),
 )
 
-const budgetsWithProgress = computed(() =>
-  budgets.value.map((b) => {
-    const spent = transactions.value
-      .filter(
-        (t) => t.walletId === b.wallet_id && t.category === b.category && t.kind === 'expense',
-      )
-      .reduce((sum, t) => sum + (t.amount || 0), 0)
-
-    const progress = b.type === 'fixed' && b.amount > 0 ? Math.min(spent / b.amount, 1) : 0
-    return { ...b, spent, progress }
-  }),
-)
+const categoryOptions = computed(() => categories.value || [])
 
 const filteredBudgets = computed(() => {
-  if (!selectedWallet.value || !budgetsWithProgress.value) return []
-  return budgetsWithProgress.value.filter((b) => b.wallet_id === selectedWallet.value)
+  if (!selectedWallet.value) return budgets.value || []
+
+  return (budgets.value || []).filter(() => {
+    // For now, budgets are user-based, not wallet-based
+    // This would need to be adjusted based on your business logic
+    return true
+  })
 })
 
-// --- Save or update budget ---
-function saveBudget() {
-  if (!form.value.wallet_id || !form.value.category) {
-    $q.notify({ type: 'warning', message: 'Please fill in all fields' })
+// Helper functions
+function getCategoryName(categoryId) {
+  const category = (categories.value || []).find((c) => c._id === categoryId)
+  return category ? category.name : 'Unknown Category'
+}
+
+function getBudgetProgress(budget) {
+  if (budget.amount > 0) {
+    return Math.min(budget.spent / budget.amount, 1)
+  }
+  return 0
+}
+
+function isBudgetExceeded(budget) {
+  return budget.spent > budget.amount && budget.amount > 0
+}
+
+// Check if budget is for Tithes category
+function isTithesCategory(budget) {
+  const category = (categories.value || []).find((c) => c._id === budget.categoryId)
+  return category && category.name.toLowerCase() === 'tithes'
+}
+
+// Get expected tithes amount
+function getExpectedTithes() {
+  return expectedTithes.value
+}
+
+// Load expected tithes
+async function loadExpectedTithes() {
+  try {
+    expectedTithes.value = await calculateExpectedTithes()
+
+    // Always ensure we have a value, even if it's 0
+    if (expectedTithes.value === undefined || expectedTithes.value === null) {
+      expectedTithes.value = 0
+    }
+  } catch (error) {
+    console.error('Failed to load expected tithes:', error)
+    expectedTithes.value = 0
+  }
+}
+
+// Save or update budget
+async function saveBudget() {
+  if (!form.value.categoryId) {
+    $q.notify({ type: 'warning', message: 'Please select a category' })
     return
   }
 
-  if (form.value.type === 'fixed' && !form.value.amount) {
-    $q.notify({ type: 'warning', message: 'Please enter an amount' })
+  if (form.value.budgetType === 'fixed' && !form.value.amount) {
+    $q.notify({ type: 'warning', message: 'Please enter a budget amount' })
     return
   }
 
-  if (form.value.type === 'percentage' && !form.value.percent) {
-    $q.notify({ type: 'warning', message: 'Please enter a percentage' })
+  if (form.value.budgetType === 'percentage' && !form.value.percent) {
+    $q.notify({ type: 'warning', message: 'Please enter a budget percentage' })
     return
   }
 
-  const existing = budgets.value.find(
-    (b) => b.wallet_id === form.value.wallet_id && b.category === form.value.category,
-  )
-  if (!editingBudget.value && existing) {
-    $q.notify({ type: 'warning', message: 'Budget already exists for this category.' })
-    return
-  }
+  try {
+    // Get current month period
+    const now = new Date()
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
 
-  const newBudget = {
-    _id: editingBudget.value?._id || new Date().toISOString(),
-    wallet_id: form.value.wallet_id,
-    category: form.value.category,
-    type: form.value.type,
-    amount: form.value.type === 'fixed' ? form.value.amount : 0,
-    percent: form.value.type === 'percentage' ? form.value.percent : 0,
-    spent: 0,
-  }
+    const budgetData = {
+      categoryId: form.value.categoryId,
+      budgetType: form.value.budgetType,
+      periodStart: startOfMonth.toISOString(),
+      periodEnd: endOfMonth.toISOString(),
+      amount: form.value.budgetType === 'fixed' ? form.value.amount : 0,
+      percent: form.value.budgetType === 'percentage' ? form.value.percent : 0,
+      isShared: false,
+      sharedWithUserIds: [],
+    }
 
-  if (editingBudget.value) {
-    budgetsStore.updateBudget(editingBudget.value._id, newBudget)
-  } else {
-    budgetsStore.addBudget(newBudget)
-  }
-  showDialog.value = false
-  editingBudget.value = null
+    if (editingBudget.value) {
+      await budgetsStore.updateBudget(editingBudget.value._id, budgetData)
+      $q.notify({ type: 'positive', message: 'Budget updated successfully!' })
+    } else {
+      await budgetsStore.addBudget(budgetData)
+      $q.notify({ type: 'positive', message: 'Budget added successfully!' })
+    }
 
+    resetForm()
+    showDialog.value = false
+  } catch (error) {
+    console.error('Error saving budget:', error)
+    $q.notify({ type: 'negative', message: 'Failed to save budget' })
+  }
+}
+
+function resetForm() {
   form.value = {
-    wallet_id: activeWallet.value || '',
-    category: '',
-    type: 'fixed',
+    categoryId: '',
+    budgetType: 'fixed',
     amount: 0,
     percent: 0,
   }
-
-  $q.notify({ type: 'positive', message: 'Budget saved successfully!' })
+  editingBudget.value = null
 }
 
-// --- Lifecycle ---
+async function createNewCategory(newCategory) {
+  if (!newCategory.trim()) return
+
+  try {
+    const category = await addCategory({
+      name: newCategory,
+      kind: 'expense', // Default to expense for budgets
+      icon: 'category',
+      color: 'red-5',
+      description: `${newCategory} expenses`,
+      isShared: true,
+    })
+
+    form.value.categoryId = category._id
+  } catch (error) {
+    console.error('Error creating category:', error)
+    $q.notify({ type: 'negative', message: 'Failed to create category' })
+  }
+}
+
+// Load data on mount
 onMounted(async () => {
-  await walletsStore.loadWallets()
-  await categoriesStore.loadCategories()
-  await store.loadAll()
-  await budgetsStore.loadBudgets()
-
-  // Ensure we have an active wallet
-  if (wallets.value.length > 0) {
-    if (!activeWallet.value) {
-      walletsStore.setActiveWallet(wallets.value[0]._id)
+  // Initialize user if not logged in (for demo purposes)
+  if (!currentUser.value) {
+    // Check if user is authenticated
+    if (!currentUser.value) {
+      console.warn('No user logged in - budgets require authentication')
+      return
     }
-    selectedWallet.value = activeWallet.value
-    form.value.wallet_id = activeWallet.value
+  }
+
+  // Load all data
+  await Promise.all([
+    financesStore.loadAll(),
+    categoriesStore.loadCategories(),
+    budgetsStore.loadBudgets(),
+  ])
+
+  // Load expected tithes
+  await loadExpectedTithes()
+
+  // Set default wallet
+  if (wallets.value.length > 0) {
+    selectedWallet.value = wallets.value[0]._id
   }
 })
 
-// --- Watchers: keep store, dropdown, and form in sync ---
-watch(selectedWallet, (val) => {
-  if (val) {
-    walletsStore.setActiveWallet(val)
-    form.value.wallet_id = val
-  }
-})
+// Watch for changes
+watch(
+  [wallets],
+  ([newWallets]) => {
+    if (newWallets.length > 0 && !selectedWallet.value) {
+      selectedWallet.value = newWallets[0]._id
+    }
+  },
+  { immediate: true },
+)
 
-watch(activeWallet, (val) => {
-  if (val && selectedWallet.value !== val) {
-    selectedWallet.value = val
-    form.value.wallet_id = val
-  }
-})
+// Watch for budget and category changes to refresh expected tithes
+watch(
+  [budgets, categories],
+  async () => {
+    await loadExpectedTithes()
+  },
+  { deep: true },
+)
 </script>
 
 <style scoped>
+/* Page Layout */
+.q-page {
+  background: #f8f9fa;
+  min-height: 100vh;
+}
+
+/* Budget Cards */
 .fade-slide-up-enter-active,
 .fade-slide-up-leave-active {
   transition: all 0.25s ease;
