@@ -4,7 +4,75 @@ import { useUsersStore } from './users'
 import { useUserData } from 'src/composables/useUserData'
 import { useEmail } from 'src/composables/useEmail'
 import { useDatabase } from 'src/composables/useDatabase'
-import CryptoJS from 'crypto-js'
+import PouchDB from 'pouchdb-browser'
+
+// Helper function to ensure database sync before user lookup
+async function ensureDataSynced() {
+  try {
+    const { localDB } = useDatabase()
+
+    // Test database connection first
+    console.log('Testing database connection...')
+    try {
+      await localDB.info()
+      console.log('Database connection is ready')
+    } catch (connError) {
+      console.warn('Database connection test failed, waiting for recovery:', connError)
+      // Wait for connection to recover
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
+      try {
+        await localDB.info()
+        console.log('Database connection recovered')
+      } catch (retryError) {
+        console.warn('Database connection still not ready, proceeding anyway:', retryError)
+        return Promise.resolve()
+      }
+    }
+
+    // Create remote DB connection for sync
+    const couchDBUrl = import.meta.env.VITE_COUCHDB_URL || 'https://server.themission.site'
+    const dbName = import.meta.env.VITE_COUCHDB_DB_NAME || 'mywallet_db'
+    const dbUsername = import.meta.env.VITE_COUCHDB_USERNAME || 'root'
+    const dbPassword = import.meta.env.VITE_COUCHDB_PASSWORD || 'Sharpest2Mind'
+
+    const remoteDB = new PouchDB(`${couchDBUrl}/${dbName}`, {
+      auth: { username: dbUsername, password: dbPassword },
+    })
+
+    console.log('Ensuring database is synced...')
+
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        console.log('Sync timeout reached, continuing anyway')
+        resolve()
+      }, 5000) // 5 second timeout
+
+      localDB
+        .sync(remoteDB, {
+          live: false, // One-time sync
+          retry: false,
+        })
+        .on('complete', () => {
+          clearTimeout(timeout)
+          console.log('Database sync completed successfully')
+          resolve()
+        })
+        .on('error', (err) => {
+          clearTimeout(timeout)
+          console.warn('Sync failed, continuing anyway:', err)
+          resolve() // Continue even if sync fails
+        })
+        .on('change', (info) => {
+          console.log('Sync change detected:', info)
+        })
+    })
+  } catch (error) {
+    console.warn('Error during sync:', error)
+    // Don't throw error, just continue
+    return Promise.resolve()
+  }
+}
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
@@ -54,15 +122,27 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     try {
-      // Check if user exists by loading current user
-      usersStore.initialize()
-      let dbUser = usersStore.currentUser
+      // Force sync database before checking for existing users
+      console.log('Forcing database sync before user lookup...')
+      await ensureDataSynced()
+
+      // Always look up existing user by email first
+      console.log('Looking up existing user by email...')
+      let dbUser = null
       let isNewUser = false
 
-      console.log('Current user from store:', dbUser)
+      try {
+        const existingUsers = await getUsersByEmail(userInfo.email)
+        if (existingUsers.length > 0) {
+          dbUser = existingUsers[0]
+          console.log('Found existing user:', dbUser)
+        }
+      } catch (lookupError) {
+        console.warn('Error looking up user by email:', lookupError)
+      }
 
-      if (!dbUser || dbUser.email !== userInfo.email) {
-        console.log('Creating new user for Google login')
+      if (!dbUser) {
+        console.log('No existing user found, creating new user for Google login')
         // Create new user for Google login
         try {
           dbUser = await usersStore.registerUser({
@@ -81,19 +161,12 @@ export const useAuthStore = defineStore('auth', () => {
             registerError.message.includes('already exists') ||
             registerError.name === 'conflict'
           ) {
-            console.log('User already exists or conflict detected, trying to find by email')
+            console.log('User already exists or conflict detected, trying to find by email again')
             // Find existing user by email
             const existingUsers = await getUsersByEmail(userInfo.email)
             if (existingUsers.length > 0) {
               dbUser = existingUsers[0]
-              console.log('Found existing user:', dbUser)
-              // Update existing user with Google info
-              dbUser = await usersStore.updateUserProfile({
-                name: userInfo.name,
-                picture: userInfo.picture,
-                provider: 'google',
-                emailVerified: true,
-              })
+              console.log('Found existing user after conflict:', dbUser)
             } else {
               throw registerError
             }
@@ -104,12 +177,15 @@ export const useAuthStore = defineStore('auth', () => {
       } else {
         console.log('Updating existing user with Google info')
         // Update existing user with Google info
-        dbUser = await usersStore.updateUserProfile({
-          name: userInfo.name,
-          picture: userInfo.picture,
-          provider: 'google',
-          emailVerified: true,
-        })
+        dbUser = await usersStore.updateUserProfile(
+          {
+            name: userInfo.name,
+            picture: userInfo.picture,
+            provider: 'google',
+            emailVerified: true,
+          },
+          dbUser,
+        )
       }
 
       if (isNewUser) {
@@ -155,30 +231,54 @@ export const useAuthStore = defineStore('auth', () => {
     return await loginWithGoogle(userInfo)
   }
 
+  // Helper function to get user type by email
+  async function getUserType(email) {
+    try {
+      const { localDB } = useDatabase()
+
+      const result = await localDB.find({
+        selector: {
+          type: 'user',
+          email: email,
+        },
+      })
+
+      if (result.docs.length === 0) {
+        return null // User doesn't exist
+      }
+
+      return result.docs[0].provider || 'traditional'
+    } catch (error) {
+      console.error('Error getting user type:', error)
+      return null
+    }
+  }
+
   async function login(email, password) {
     if (!email || !password) {
       throw new Error('Email and password are required')
     }
 
     try {
-      // Hash password for comparison
-      const hashedPassword = CryptoJS.SHA256(password).toString()
+      // First, check if user exists and get their provider type
+      const userType = await getUserType(email)
 
-      // Try to login with existing users store
+      if (!userType) {
+        throw new Error('User not found')
+      }
+
+      // Route Google users to appropriate error message
+      if (userType === 'google') {
+        throw new Error(
+          'This account uses Google Sign-in. Please use the Google login button instead.',
+        )
+      }
+
+      // For traditional users, proceed with password verification
       const dbUser = await usersStore.loginUser(email, password)
 
       if (!dbUser) {
         throw new Error('User not found')
-      }
-
-      // Verify password if user has password
-      if (dbUser.password && dbUser.password !== hashedPassword) {
-        throw new Error('Invalid password')
-      }
-
-      // Check if email is verified (for traditional signup)
-      if (!dbUser.emailVerified && dbUser.provider === 'traditional') {
-        throw new Error('Please verify your email before logging in')
       }
 
       user.value = dbUser
@@ -285,15 +385,41 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const { localDB } = useDatabase()
 
-      // Search for users by email in the database
-      const result = await localDB.find({
+      // First, try to find users in local database
+      let result = await localDB.find({
         selector: {
           type: 'user',
           email: email,
         },
       })
 
+      // If no users found locally, force sync and try again
+      if (result.docs.length === 0) {
+        console.log('No users found locally, forcing sync and retrying...')
+        await ensureDataSynced()
+
+        result = await localDB.find({
+          selector: {
+            type: 'user',
+            email: email,
+          },
+        })
+      }
+
       console.log(`Found ${result.docs.length} user(s) with email:`, email)
+
+      // Log user details for debugging
+      if (result.docs.length > 0) {
+        console.log('User data retrieved:', {
+          id: result.docs[0]._id,
+          email: result.docs[0].email,
+          name: result.docs[0].name,
+          provider: result.docs[0].provider,
+          hasWalletId: !!result.docs[0].walletId,
+          hasCategoryIds: !!result.docs[0].categoryIds,
+        })
+      }
+
       return result.docs
     } catch (error) {
       console.error('Error finding user by email:', error)
@@ -318,5 +444,6 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     checkAuth,
     verifyEmail,
+    getUserType,
   }
 })
