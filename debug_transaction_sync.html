@@ -1,0 +1,207 @@
+<!doctype html>
+<html>
+  <head>
+    <title>IndexedDB Connection Fix Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .log {
+        background: #f5f5f5;
+        border: 1px solid #ddd;
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+        white-space: pre-wrap;
+      }
+      .success {
+        background: #d4edda;
+        border-color: #c3e6cb;
+        color: #155724;
+      }
+      .error {
+        background: #f8d7da;
+        border-color: #f5c6cb;
+        color: #721c24;
+      }
+      button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin: 5px;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>IndexedDB Connection State Fix Test</h1>
+
+    <div>
+      <h2>Test Scenarios</h2>
+      <button onclick="testConnectionState()">Test Database Connection State</button>
+      <button onclick="testUserCreation()">Test User Creation (Simulates Google Login)</button>
+      <button onclick="testMultipleRetries()">Test Multiple Connection Retries</button>
+      <button onclick="clearLogs()">Clear Logs</button>
+    </div>
+
+    <div id="logs"></div>
+
+    <script type="module">
+      // Import PouchDB
+      import PouchDB from 'https://cdn.jsdelivr.net/npm/pouchdb-browser@9.0.0/+esm'
+
+      // Initialize database
+      const localDB = new PouchDB('finance_test')
+
+      // Connection state checking functions (from the fix)
+      function isDatabaseConnectionReady(database) {
+        try {
+          // Check if database is closed or closing
+          if (database._state === 'closing' || database._state === 'closed') {
+            return false
+          }
+
+          // Check if underlying IndexedDB database is ready
+          if (database._conn && database._conn.readyState === 'closing') {
+            return false
+          }
+
+          return true
+        } catch (error) {
+          console.warn('Error checking database connection state:', error)
+          return false
+        }
+      }
+
+      async function waitForDatabaseReady(database, maxAttempts = 10, delay = 100) {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          if (isDatabaseConnectionReady(database)) {
+            return true
+          }
+
+          console.log(
+            `Waiting for database connection to be ready... (attempt ${attempt + 1}/${maxAttempts})`,
+          )
+          await new Promise((resolve) => setTimeout(resolve, delay))
+        }
+
+        return false
+      }
+
+      // Test functions
+      window.testConnectionState = async function () {
+        log('Testing database connection state...')
+
+        try {
+          const isReady = isDatabaseConnectionReady(localDB)
+          log(`Database connection ready: ${isReady}`, isReady ? 'success' : 'error')
+
+          if (!isReady) {
+            const waitResult = await waitForDatabaseReady(localDB, 5, 200)
+            log(`Connection recovery result: ${waitResult}`, waitResult ? 'success' : 'error')
+          }
+        } catch (error) {
+          log(`Connection test error: ${error.message}`, 'error')
+        }
+      }
+
+      window.testUserCreation = async function () {
+        log('Testing user creation (simulating Google login scenario)...')
+
+        try {
+          // Test the fixed user creation process
+          const userData = {
+            email: 'test@example.com',
+            name: 'Test User',
+            password: '',
+            provider: 'google',
+            emailVerified: true,
+          }
+
+          // Check connection before operation
+          log('Checking database connection...')
+          const isReady = await waitForDatabaseReady(localDB, 5, 100)
+
+          if (!isReady) {
+            throw new Error('Database connection could not be established')
+          }
+
+          log('Creating user document...')
+          const userDoc = {
+            _id: `user_${Date.now()}_test`,
+            type: 'user',
+            ...userData,
+            walletId: `wallet_test`,
+            categoryIds: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }
+
+          log('Saving user document...')
+          const result = await localDB.put(userDoc)
+          log(`User created successfully: ${result.id}`, 'success')
+        } catch (error) {
+          if (
+            error.name === 'InvalidStateError' &&
+            error.message.includes('database connection is closing')
+          ) {
+            log('❌ IndexedDB connection state error occurred (this should be fixed!)', 'error')
+            log(`Error: ${error.message}`, 'error')
+          } else {
+            log(`❌ User creation failed: ${error.message}`, 'error')
+          }
+        }
+      }
+
+      window.testMultipleRetries = async function () {
+        log('Testing multiple connection retries...')
+
+        for (let i = 1; i <= 3; i++) {
+          try {
+            log(`Attempt ${i}: Testing connection...`)
+            const isReady = isDatabaseConnectionReady(localDB)
+
+            if (!isReady) {
+              log(`Attempt ${i}: Connection not ready, waiting...`)
+              const recovered = await waitForDatabaseReady(localDB, 3, 100)
+              log(`Attempt ${i}: Recovery result: ${recovered}`, recovered ? 'success' : 'error')
+            } else {
+              log(`Attempt ${i}: Connection ready`, 'success')
+            }
+          } catch (error) {
+            log(`Attempt ${i}: Error - ${error.message}`, 'error')
+          }
+        }
+      }
+
+      window.clearLogs = function () {
+        document.getElementById('logs').innerHTML = ''
+      }
+
+      function log(message, type = '') {
+        const logsDiv = document.getElementById('logs')
+        const logDiv = document.createElement('div')
+        logDiv.className = `log ${type}`
+        logDiv.textContent = `${new Date().toLocaleTimeString()}: ${message}`
+        logsDiv.appendChild(logDiv)
+        logsDiv.scrollTop = logsDiv.scrollHeight
+      }
+
+      // Initial log
+      log('Test page loaded. Use the buttons above to test the IndexedDB connection fix.')
+      log('The fix includes:')
+      log('- Connection state checking before operations')
+      log('- Automatic retry logic for InvalidStateError')
+      log('- Connection recovery waiting mechanism')
+      log('- Exponential backoff for retries')
+    </script>
+  </body>
+</html>

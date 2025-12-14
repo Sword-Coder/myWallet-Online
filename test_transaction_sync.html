@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Transaction Sync Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      .container {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .test-section {
+        margin: 20px 0;
+        padding: 15px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+      }
+      .result {
+        margin: 10px 0;
+        padding: 10px;
+        border-radius: 4px;
+        font-family: monospace;
+      }
+      .success {
+        background-color: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+      .error {
+        background-color: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+      .info {
+        background-color: #d1ecf1;
+        color: #0c5460;
+        border: 1px solid #bee5eb;
+      }
+      button {
+        background-color: #007bff;
+        color: white;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        margin: 5px;
+      }
+      button:hover {
+        background-color: #0056b3;
+      }
+      button:disabled {
+        background-color: #6c757d;
+        cursor: not-allowed;
+      }
+      .transaction-item {
+        background: #f8f9fa;
+        padding: 8px;
+        margin: 5px 0;
+        border-radius: 4px;
+        border-left: 4px solid #007bff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🔧 Transaction Sync Test</h1>
+      <p>
+        This script tests the transaction sync functionality to ensure your transactionIds array is
+        properly maintained.
+      </p>
+
+      <div class="test-section">
+        <h3>📊 Database Status</h3>
+        <button onclick="initializeDatabases()">🔄 Initialize Databases</button>
+        <button onclick="checkUserStatus()">👤 Check Current User</button>
+        <div id="dbStatus"></div>
+      </div>
+
+      <div class="test-section">
+        <h3>🔍 Transaction Analysis</h3>
+        <button onclick="analyzeTransactions()">🔍 Analyze Transactions</button>
+        <button onclick="syncTransactionIds()">🔄 Sync Transaction IDs</button>
+        <div id="transactionAnalysis"></div>
+      </div>
+
+      <div class="test-section">
+        <h3>✅ Test Transaction Management</h3>
+        <button onclick="testAddTransaction()">➕ Test Add Transaction</button>
+        <button onclick="testDeleteTransaction()">🗑️ Test Delete Transaction</button>
+        <div id="testResults"></div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/pouchdb@7.3.1/dist/pouchdb.min.js"></script>
+    <script>
+      let localDB, remoteDB
+      let currentUser = null
+
+      function log(elementId, message, type = 'info') {
+        const element = document.getElementById(elementId)
+        const div = document.createElement('div')
+        div.className = `result ${type}`
+        div.innerHTML = `<strong>${new Date().toLocaleTimeString()}:</strong> ${message}`
+        element.appendChild(div)
+        element.scrollTop = element.scrollHeight
+      }
+
+      async function initializeDatabases() {
+        try {
+          log('dbStatus', 'Initializing databases...', 'info')
+
+          localDB = new PouchDB('finance_local')
+          remoteDB = new PouchDB('https://server.themission.site/mywallet_db', {
+            auth: { username: 'root', password: 'Sharpest2Mind' },
+          })
+
+          // Load current user from localStorage
+          const savedUser = localStorage.getItem('currentUser')
+          if (savedUser && savedUser !== 'undefined') {
+            currentUser = JSON.parse(savedUser)
+            log('dbStatus', `✅ Loaded user: ${currentUser.email}`, 'success')
+            log(
+              'dbStatus',
+              `📝 Current transactionIds: [${(currentUser.transactionIds || []).join(', ')}]`,
+              'info',
+            )
+          } else {
+            log('dbStatus', '❌ No user found in localStorage. Please log in first.', 'error')
+          }
+
+          log('dbStatus', '✅ Databases initialized successfully', 'success')
+        } catch (error) {
+          log('dbStatus', `❌ Failed to initialize: ${error.message}`, 'error')
+        }
+      }
+
+      async function checkUserStatus() {
+        if (!currentUser) {
+          log('dbStatus', '❌ No current user. Please initialize databases first.', 'error')
+          return
+        }
+
+        try {
+          const userDoc = await localDB.get(currentUser._id)
+          log('dbStatus', `✅ User document found in local DB`, 'success')
+          log(
+            'dbStatus',
+            `📝 User transactionIds count: ${(userDoc.transactionIds || []).length}`,
+            'info',
+          )
+
+          // Also check remote
+          try {
+            const remoteUser = await remoteDB.get(currentUser._id)
+            log('dbStatus', `✅ User document found in remote DB`, 'success')
+          } catch (remoteError) {
+            log('dbStatus', `⚠️ User not found in remote DB: ${remoteError.message}`, 'error')
+          }
+        } catch (error) {
+          log('dbStatus', `❌ User document not found in local DB: ${error.message}`, 'error')
+        }
+      }
+
+      async function analyzeTransactions() {
+        if (!currentUser) {
+          log(
+            'transactionAnalysis',
+            '❌ No current user. Please initialize databases first.',
+            'error',
+          )
+          return
+        }
+
+        try {
+          // Get transactions by userId query
+          const result = await localDB.find({
+            selector: {
+              type: 'transaction',
+              userId: currentUser._id,
+            },
+          })
+
+          const queryTransactions = result.docs
+          const queryIds = queryTransactions.map((t) => t._id)
+
+          log(
+            'transactionAnalysis',
+            `🔍 Found ${queryTransactions.length} transactions by userId query`,
+            'success',
+          )
+          log('transactionAnalysis', `📋 Query transaction IDs: [${queryIds.join(', ')}]`, 'info')
+
+          // Get user's stored transactionIds
+          const storedIds = currentUser.transactionIds || []
+          log('transactionAnalysis', `💾 Stored transactionIds count: ${storedIds.length}`, 'info')
+          log('transactionAnalysis', `💾 Stored IDs: [${storedIds.join(', ')}]`, 'info')
+
+          // Compare
+          const missingFromStorage = queryIds.filter((id) => !storedIds.includes(id))
+          const orphanedInStorage = storedIds.filter((id) => !queryIds.includes(id))
+
+          if (missingFromStorage.length > 0) {
+            log(
+              'transactionAnalysis',
+              `⚠️ Missing from storage: [${missingFromStorage.join(', ')}]`,
+              'error',
+            )
+          }
+
+          if (orphanedInStorage.length > 0) {
+            log(
+              'transactionAnalysis',
+              `⚠️ Orphaned in storage: [${orphanedInStorage.join(', ')}]`,
+              'error',
+            )
+          }
+
+          if (missingFromStorage.length === 0 && orphanedInStorage.length === 0) {
+            log(
+              'transactionAnalysis',
+              '✅ TransactionIds array is perfectly synchronized!',
+              'success',
+            )
+          }
+
+          // Show transaction details
+          if (queryTransactions.length > 0) {
+            log('transactionAnalysis', '📊 Transaction Details:', 'info')
+            queryTransactions.forEach((t, index) => {
+              const div = document.createElement('div')
+              div.className = 'transaction-item'
+              div.innerHTML = `<strong>${index + 1}. ${t._id}</strong><br>
+                                       Amount: ${t.amount} (${t.kind})<br>
+                                       Category: ${t.categoryId}<br>
+                                       Date: ${new Date(t.datetime).toLocaleString()}`
+              document.getElementById('transactionAnalysis').appendChild(div)
+            })
+          }
+        } catch (error) {
+          log('transactionAnalysis', `❌ Failed to analyze transactions: ${error.message}`, 'error')
+        }
+      }
+
+      async function syncTransactionIds() {
+        if (!currentUser) {
+          log(
+            'transactionAnalysis',
+            '❌ No current user. Please initialize databases first.',
+            'error',
+          )
+          return
+        }
+
+        try {
+          log('transactionAnalysis', '🔄 Syncing transactionIds...', 'info')
+
+          // Get actual transactions
+          const result = await localDB.find({
+            selector: {
+              type: 'transaction',
+              userId: currentUser._id,
+            },
+          })
+
+          const actualIds = result.docs.map((t) => t._id)
+
+          // Update user document
+          const userDoc = await localDB.get(currentUser._id)
+          userDoc.transactionIds = actualIds
+          userDoc.updatedAt = new Date().toISOString()
+
+          await localDB.put(userDoc)
+
+          // Update localStorage
+          localStorage.setItem('currentUser', JSON.stringify(userDoc))
+          currentUser = userDoc
+
+          log(
+            'transactionAnalysis',
+            `✅ Synced transactionIds: [${actualIds.join(', ')}]`,
+            'success',
+          )
+          log('transactionAnalysis', `📊 Now have ${actualIds.length} transaction IDs`, 'info')
+        } catch (error) {
+          log('transactionAnalysis', `❌ Failed to sync: ${error.message}`, 'error')
+        }
+      }
+
+      async function testAddTransaction() {
+        if (!currentUser) {
+          log('testResults', '❌ No current user. Please initialize databases first.', 'error')
+          return
+        }
+
+        try {
+          log('testResults', '➕ Testing add transaction...', 'info')
+
+          // Create test transaction
+          const testTransaction = {
+            _id: `test_transaction_${Date.now()}`,
+            type: 'transaction',
+            userId: currentUser._id,
+            walletId: currentUser.walletId,
+            kind: 'expense',
+            amount: 25.5,
+            categoryId: (currentUser.categoryIds || [])[0] || 'test-category',
+            datetime: new Date().toISOString(),
+            notes: 'Test transaction for sync verification',
+            tags: [],
+            splitPayment: { isSplit: false, splitDetails: {} },
+          }
+
+          await localDB.put(testTransaction)
+
+          // Update user's transactionIds
+          const userDoc = await localDB.get(currentUser._id)
+          const currentIds = userDoc.transactionIds || []
+          userDoc.transactionIds = [...currentIds, testTransaction._id]
+          userDoc.updatedAt = new Date().toISOString()
+
+          await localDB.put(userDoc)
+          localStorage.setItem('currentUser', JSON.stringify(userDoc))
+          currentUser = userDoc
+
+          log('testResults', `✅ Test transaction added: ${testTransaction._id}`, 'success')
+          log(
+            'testResults',
+            `📝 Updated transactionIds count: ${userDoc.transactionIds.length}`,
+            'info',
+          )
+
+          // Clean up test transaction
+          setTimeout(async () => {
+            try {
+              await localDB.remove(testTransaction)
+              const userDoc = await localDB.get(currentUser._id)
+              userDoc.transactionIds = userDoc.transactionIds.filter(
+                (id) => id !== testTransaction._id,
+              )
+              await localDB.put(userDoc)
+              localStorage.setItem('currentUser', JSON.stringify(userDoc))
+              currentUser = userDoc
+              log('testResults', `🧹 Test transaction cleaned up`, 'info')
+            } catch (cleanupError) {
+              log(
+                'testResults',
+                `⚠️ Failed to clean up test transaction: ${cleanupError.message}`,
+                'error',
+              )
+            }
+          }, 2000)
+        } catch (error) {
+          log('testResults', `❌ Failed to test add transaction: ${error.message}`, 'error')
+        }
+      }
+
+      async function testDeleteTransaction() {
+        if (!currentUser) {
+          log('testResults', '❌ No current user. Please initialize databases first.', 'error')
+          return
+        }
+
+        try {
+          log('testResults', '🗑️ Testing delete transaction...', 'info')
+
+          // Get first transaction
+          const result = await localDB.find({
+            selector: {
+              type: 'transaction',
+              userId: currentUser._id,
+            },
+            limit: 1,
+          })
+
+          if (result.docs.length === 0) {
+            log('testResults', '⚠️ No transactions found to delete', 'error')
+            return
+          }
+
+          const transactionToDelete = result.docs[0]
+
+          // Delete transaction
+          await localDB.remove(transactionToDelete)
+
+          // Update user's transactionIds
+          const userDoc = await localDB.get(currentUser._id)
+          userDoc.transactionIds = (userDoc.transactionIds || []).filter(
+            (id) => id !== transactionToDelete._id,
+          )
+          userDoc.updatedAt = new Date().toISOString()
+
+          await localDB.put(userDoc)
+          localStorage.setItem('currentUser', JSON.stringify(userDoc))
+          currentUser = userDoc
+
+          log('testResults', `✅ Test transaction deleted: ${transactionToDelete._id}`, 'success')
+          log(
+            'testResults',
+            `📝 Updated transactionIds count: ${userDoc.transactionIds.length}`,
+            'info',
+          )
+        } catch (error) {
+          log('testResults', `❌ Failed to test delete transaction: ${error.message}`, 'error')
+        }
+      }
+
+      // Auto-initialize when page loads
+      window.addEventListener('load', () => {
+        log('dbStatus', '🚀 Page loaded. Click "Initialize Databases" to start.', 'info')
+      })
+    </script>
+  </body>
+</html>
