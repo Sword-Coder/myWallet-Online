@@ -220,10 +220,10 @@ const isSharedWallet = computed(() => {
 onMounted(async () => {
   // Initialize user if not logged in (for demo purposes)
   if (!currentUser || !currentUser.value) {
-    try {
-      await usersStore.loginUser('demo@example.com', 'password')
-    } catch (error) {
-      console.warn('Demo login failed:', error)
+    // Check if user is authenticated
+    if (!currentUser.value) {
+      console.warn('No user logged in - redirect to login required')
+      return
     }
   }
 
