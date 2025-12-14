@@ -1,77 +1,142 @@
 <template>
-  <q-page class="q-pa-md bg-grey-2">
+  <q-page class="q-pa-md">
     <!-- Header -->
-    <div class="text-h6 text-weight-bold q-mb-sm">Accounts</div>
-    <div class="text-subtitle2 text-grey q-mb-md">{{ currentMonth }}</div>
+    <div class="row items-center justify-between q-mb-md">
+      <div>
+        <div class="text-h6 text-weight-bold">Accounts</div>
+        <div class="text-subtitle2 text-grey">{{ currentMonth }}</div>
+      </div>
+
+      <!-- Add Account Button -->
+      <q-btn
+        color="primary"
+        icon="add"
+        label="Add Account"
+        @click="showAddDialog = true"
+        unelevated
+      />
+    </div>
 
     <!-- Accounts List -->
     <transition-group name="fade-slide-up" tag="div">
-      <q-card v-for="a in wallets" :key="a._id" flat bordered class="q-mb-sm">
+      <q-card v-for="wallet in wallets" :key="wallet._id" flat bordered class="q-mb-sm">
         <q-card-section>
           <div class="row items-center justify-between">
             <div class="row items-center">
-              <q-icon
-                :name="a.icon || 'account_balance_wallet'"
-                size="32px"
-                class="q-mr-sm"
+              <q-avatar
+                :icon="wallet.icon || 'account_balance_wallet'"
+                size="48px"
                 color="primary"
+                text-color="white"
+                class="q-mr-md"
               />
               <div>
-                <div class="text-subtitle2">{{ a.name }}</div>
-                <div class="text-caption text-grey">{{ a.type || 'Wallet' }}</div>
+                <div class="text-subtitle1 text-weight-medium">{{ wallet.name }}</div>
+                <div class="text-caption text-grey">{{ wallet.typeLabel || 'Wallet' }}</div>
+                <div class="text-caption text-grey">
+                  {{ formatDate(wallet.createdAt) }}
+                </div>
               </div>
             </div>
-            <div :class="a.balance >= 0 ? 'text-primary' : 'text-negative'" class="text-h6">
-              {{ a.balance?.toLocaleString() || 0 }} PHP
+            <div class="text-right">
+              <div :class="getBalanceClass(wallet.balance)" class="text-h6">
+                ₱{{ formatBalance(wallet.balance) }}
+              </div>
+              <div class="text-caption text-grey">Current Balance</div>
             </div>
           </div>
         </q-card-section>
+
+        <!-- Account Actions -->
+        <q-card-actions v-if="wallet._id !== currentUser?.walletId" align="right">
+          <q-btn flat dense color="grey" icon="edit" label="Edit" @click="editWallet(wallet)" />
+          <q-btn
+            flat
+            dense
+            color="negative"
+            icon="delete"
+            label="Delete"
+            @click="deleteWallet(wallet)"
+          />
+        </q-card-actions>
       </q-card>
     </transition-group>
 
-    <div v-if="!wallets.length" class="text-grey text-center q-mt-lg">No accounts added yet.</div>
+    <!-- Empty State -->
+    <div v-if="!wallets.length" class="text-grey text-center q-mt-lg">
+      <q-icon name="account_balance_wallet" size="64px" class="q-mb-md" />
+      <div class="text-h6 q-mb-sm">No accounts added yet</div>
+      <div class="text-caption">Add your first account to get started!</div>
+    </div>
 
-    <!-- Floating Add Button -->
-    <q-page-sticky position="bottom-right" :offset="[18, 18]">
-      <q-btn fab icon="add" color="primary" @click="showAddDialog = true" />
-    </q-page-sticky>
-
-    <!-- Add Account Dialog -->
-    <q-dialog v-model="showAddDialog">
-      <q-card style="min-width: 350px">
-        <q-card-section>
-          <div class="text-h6">Add Account</div>
+    <!-- Add/Edit Account Dialog -->
+    <q-dialog v-model="showAddDialog" persistent>
+      <q-card style="min-width: 400px; max-width: 90vw">
+        <q-card-section class="dialog-header">
+          <div class="row items-center">
+            <div class="text-h6">{{ editingWallet ? 'Edit Account' : 'Add New Account' }}</div>
+            <q-space />
+            <q-btn icon="close" flat round dense v-close-popup @click="resetForm" />
+          </div>
         </q-card-section>
 
         <q-card-section class="q-gutter-md">
-          <q-input filled v-model="newWallet.name" label="Account Name" />
-          <q-select
-            filled
-            v-model="newWallet.type"
-            :options="['Wallet', 'Savings', 'Debt', 'Investment']"
-            label="Type"
-          />
+          <!-- Account Name -->
           <q-input
             filled
-            v-model.number="newWallet.balance"
+            v-model="form.name"
+            label="Account Name"
+            placeholder="Enter account name"
+            :rules="[(val) => (val && val.length > 0) || 'Account name is required']"
+          />
+
+          <!-- Account Type -->
+          <q-select
+            filled
+            v-model="form.typeLabel"
+            :options="accountTypes"
+            label="Account Type"
+            emit-value
+            map-options
+          />
+
+          <!-- Initial Balance -->
+          <q-input
+            filled
+            v-model.number="form.balance"
             label="Initial Balance (PHP)"
             type="number"
+            min="-999999"
+            max="999999"
+            prefix="₱"
           />
-          <q-select filled v-model="newWallet.icon" :options="iconOptions" label="Icon" emit-value>
-            <template v-slot:option="scope">
-              <q-item v-bind="scope.itemProps">
-                <q-item-section avatar>
-                  <q-icon :name="scope.opt" />
-                </q-item-section>
-                <q-item-section>{{ scope.opt }}</q-item-section>
-              </q-item>
-            </template>
-          </q-select>
+
+          <!-- Icon Selection -->
+          <div class="icon-selection-section">
+            <div class="text-subtitle2 q-mb-md">Choose an Icon</div>
+            <div class="icon-grid">
+              <div
+                v-for="icon in iconOptions"
+                :key="icon.value"
+                class="icon-option"
+                :class="{ 'icon-selected': form.icon === icon.value }"
+                @click="form.icon = icon.value"
+              >
+                <q-avatar :icon="icon.value" color="primary" text-color="white" size="48px" />
+                <div class="icon-name text-caption text-center q-mt-xs">{{ icon.label }}</div>
+              </div>
+            </div>
+          </div>
         </q-card-section>
 
         <q-card-actions align="right">
-          <q-btn flat label="Cancel" color="grey" v-close-popup />
-          <q-btn flat label="Save" color="primary" @click="saveWallet" />
+          <q-btn flat label="Cancel" color="grey" v-close-popup @click="resetForm" />
+          <q-btn
+            color="primary"
+            :label="editingWallet ? 'Update' : 'Save'"
+            @click="saveWallet"
+            :disable="!form.name"
+          />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -80,73 +145,264 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useDatabase } from 'src/composables/useDatabase.js'
+import { useQuasar } from 'quasar'
+import { useFinancesStore } from 'src/stores/finances'
+import { useUsersStore } from 'src/stores/users'
 
-const { getAllDocs, saveDoc, localDB } = useDatabase()
+// Stores
+const $q = useQuasar()
+const financesStore = useFinancesStore()
+const usersStore = useUsersStore()
 
-const wallets = ref([])
+// State from stores
+const { wallets } = financesStore
+const { currentUser } = usersStore
+
+// Dialog state
 const showAddDialog = ref(false)
-const newWallet = ref({
+const editingWallet = ref(null)
+
+// Form data
+const form = ref({
   name: '',
-  type: 'Wallet',
+  typeLabel: 'Wallet',
   balance: 0,
   icon: 'account_balance_wallet',
+  ownerUserId: '',
 })
 
-const iconOptions = [
-  'account_balance_wallet',
-  'savings',
-  'credit_card',
-  'attach_money',
-  'account_balance',
+// Options
+const accountTypes = [
+  { label: 'Wallet', value: 'Wallet' },
+  { label: 'Savings', value: 'Savings' },
+  { label: 'Debt', value: 'Debt' },
+  { label: 'Investment', value: 'Investment' },
+  { label: 'Credit Card', value: 'Credit Card' },
+  { label: 'Bank Account', value: 'Bank Account' },
 ]
 
+const iconOptions = [
+  { label: 'Wallet', value: 'account_balance_wallet' },
+  { label: 'Savings', value: 'savings' },
+  { label: 'Credit Card', value: 'credit_card' },
+  { label: 'Money', value: 'attach_money' },
+  { label: 'Bank', value: 'account_balance' },
+  { label: 'Business', value: 'business' },
+  { label: 'Investment', value: 'trending_up' },
+  { label: 'Home', value: 'home' },
+]
+
+// Computed values
 const currentMonth = computed(() =>
   new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
 )
 
-// Load wallets
-async function loadWallets() {
-  wallets.value = await getAllDocs('wallet')
+// Helper functions
+function formatBalance(balance) {
+  return Number(balance || 0).toLocaleString()
 }
 
-// Save wallet to CouchDB
+function getBalanceClass(balance) {
+  const numBalance = Number(balance || 0)
+  if (numBalance > 0) return 'text-positive'
+  if (numBalance < 0) return 'text-negative'
+  return 'text-grey-8'
+}
+
+function formatDate(dateString) {
+  if (!dateString) return ''
+  return new Date(dateString).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
 async function saveWallet() {
-  if (!newWallet.value.name) {
-    alert('Please provide a wallet name')
+  if (!form.value.name) {
+    $q.notify({ type: 'warning', message: 'Please enter an account name' })
     return
   }
 
-  await saveDoc({
-    type: 'wallet',
-    name: newWallet.value.name,
-    typeLabel: newWallet.value.type,
-    balance: Number(newWallet.value.balance),
-    icon: newWallet.value.icon,
-  })
+  try {
+    const walletData = {
+      name: form.value.name,
+      typeLabel: form.value.typeLabel,
+      balance: Number(form.value.balance) || 0,
+      icon: form.value.icon,
+      ownerUserId: currentUser.value._id,
+    }
 
-  showAddDialog.value = false
-  newWallet.value = {
-    name: '',
-    type: 'Wallet',
-    balance: 0,
-    icon: 'account_balance_wallet',
+    if (editingWallet.value) {
+      // Update existing wallet
+      await financesStore.updateWallet(editingWallet.value._id, walletData)
+      $q.notify({ type: 'positive', message: 'Account updated successfully!' })
+    } else {
+      // Add new wallet
+      await financesStore.addWallet(walletData)
+      $q.notify({ type: 'positive', message: 'Account added successfully!' })
+    }
+
+    resetForm()
+    showAddDialog.value = false
+  } catch (error) {
+    console.error('Error saving wallet:', error)
+    $q.notify({ type: 'negative', message: 'Failed to save account' })
   }
-
-  await loadWallets()
 }
 
-// Live updates
-localDB.changes({ since: 'now', live: true, include_docs: true }).on('change', loadWallets)
-onMounted(loadWallets)
+function editWallet(wallet) {
+  editingWallet.value = wallet
+  form.value = {
+    name: wallet.name,
+    typeLabel: wallet.typeLabel || 'Wallet',
+    balance: wallet.balance || 0,
+    icon: wallet.icon || 'account_balance_wallet',
+    ownerUserId: wallet.ownerUserId,
+  }
+  showAddDialog.value = true
+}
+
+async function deleteWallet(wallet) {
+  // Don't allow deletion of the main wallet
+  if (wallet._id === currentUser.value?.walletId) {
+    $q.notify({
+      type: 'warning',
+      message: 'Cannot delete your main wallet account',
+    })
+    return
+  }
+
+  $q.dialog({
+    title: 'Delete Account',
+    message: `Are you sure you want to delete "${wallet.name}"? This action cannot be undone.`,
+    cancel: true,
+    persistent: true,
+  }).onOk(async () => {
+    try {
+      await financesStore.deleteWallet(wallet._id)
+      $q.notify({ type: 'positive', message: 'Account deleted successfully!' })
+    } catch (error) {
+      console.error('Error deleting wallet:', error)
+      $q.notify({ type: 'negative', message: 'Failed to delete account' })
+    }
+  })
+}
+
+function resetForm() {
+  form.value = {
+    name: '',
+    typeLabel: 'Wallet',
+    balance: 0,
+    icon: 'account_balance_wallet',
+    ownerUserId: currentUser.value?._id || '',
+  }
+  editingWallet.value = null
+}
+
+// Load data on mount
+onMounted(async () => {
+  // Initialize user if not logged in (for demo purposes)
+  if (!currentUser.value) {
+    // Check if user is authenticated
+    if (!currentUser.value) {
+      console.warn('No user logged in - accounts require authentication')
+      return
+    }
+  }
+
+  // Load wallets
+  await financesStore.loadAll()
+
+  // Set owner user ID
+  form.value.ownerUserId = currentUser.value?._id || ''
+})
 </script>
 
 <style scoped>
+/* Page Layout */
+.q-page {
+  background: #f8f9fa;
+  min-height: 100vh;
+}
+
+/* Dialog Styles */
+.dialog-header {
+  background: linear-gradient(135deg, #4d934e 0%, #6ba06f 100%);
+  color: white;
+  padding: 16px 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Icon Selection */
+.icon-selection-section {
+  margin-top: 16px;
+}
+
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.icon-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.icon-option:hover {
+  border-color: #4d934e;
+  background-color: #f0f8f0;
+}
+
+.icon-selected {
+  border-color: #4d934e;
+  background-color: #e8f5e8;
+}
+
+.icon-name {
+  margin-top: 8px;
+  color: #666;
+  font-weight: 500;
+}
+
+/* Transitions */
 .fade-slide-up-enter-active {
   transition: all 0.3s ease;
 }
+
 .fade-slide-up-enter-from {
   opacity: 0;
   transform: translateY(10px);
+}
+
+/* Account Cards */
+.q-card {
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.q-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .icon-grid {
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 8px;
+  }
+
+  .icon-option {
+    padding: 8px;
+  }
 }
 </style>
