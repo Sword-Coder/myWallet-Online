@@ -38,32 +38,61 @@ export const useCategoriesStore = defineStore('categories', () => {
     }
   }
 
-  // Add new category
+  // Add new category with improved race condition handling
   async function addCategory(categoryData) {
     if (!usersStore.currentUser) {
       throw new Error('No user logged in')
+    }
+
+    // Prevent concurrent category creation
+    if (isLoading.value) {
+      console.log('Category creation already in progress, waiting...')
+      await new Promise((resolve) => {
+        const checkLoading = () => {
+          if (!isLoading.value) {
+            resolve()
+          } else {
+            setTimeout(checkLoading, 100)
+          }
+        }
+        checkLoading()
+      })
     }
 
     isLoading.value = true
     error.value = null
 
     try {
-      // Check if category already exists
-      const exists = categories.value.find(
-        (c) => c.name.toLowerCase() === categoryData.name.toLowerCase(),
-      )
-      if (exists) {
-        throw new Error('Category already exists')
+      // Ensure categories are loaded before proceeding
+      if (!categories.value || categories.value.length === 0) {
+        console.log('Categories not loaded, loading them first...')
+        await loadCategories()
+
+        // Wait a bit for categories to be fully loaded
+        await new Promise((resolve) => setTimeout(resolve, 200))
       }
 
+      // Double-check if category exists after loading (case-insensitive)
+      const existingCategory = categories.value.find(
+        (c) => c.name.toLowerCase() === categoryData.name.toLowerCase(),
+      )
+
+      if (existingCategory) {
+        console.log('Category already exists (after loading):', existingCategory)
+        return existingCategory
+      }
+
+      // Create new category with comprehensive validation
       const newCategory = {
         _id: generateId('category'),
         type: 'category',
-        name: categoryData.name,
+        name: categoryData.name.trim(),
         kind: categoryData.kind || 'expense',
         icon: categoryData.icon || 'category',
         color: categoryData.color || (categoryData.kind === 'expense' ? 'red-5' : 'green-5'),
-        description: categoryData.description || `${categoryData.kind} category`,
+        description:
+          categoryData.description ||
+          `${categoryData.name} ${categoryData.kind || 'expense'} category`,
         isShared: categoryData.isShared !== undefined ? categoryData.isShared : true,
         createdByUserId: usersStore.currentUser._id,
         sharedWithUserIds: categoryData.sharedWithUserIds || [],
@@ -71,11 +100,50 @@ export const useCategoriesStore = defineStore('categories', () => {
         updatedAt: new Date().toISOString(),
       }
 
-      await saveDoc(newCategory)
-      categories.value.push(newCategory)
+      // Validate required fields before saving
+      if (!newCategory.name) {
+        throw new Error('Category name is required')
+      }
 
-      console.log('Category added:', newCategory.name)
-      return newCategory
+      if (!newCategory.createdByUserId) {
+        throw new Error('User ID is required for category creation')
+      }
+
+      console.log('Saving new category:', newCategory.name)
+
+      // Save with retry logic for database conflicts
+      let savedCategory = null
+      let retryCount = 0
+      const maxRetries = 3
+
+      while (!savedCategory && retryCount < maxRetries) {
+        try {
+          savedCategory = await saveDoc(newCategory)
+          console.log('Category saved successfully:', savedCategory._id)
+        } catch (saveError) {
+          retryCount++
+          console.warn(`Category save attempt ${retryCount} failed:`, saveError)
+
+          if (retryCount >= maxRetries) {
+            throw new Error(
+              `Failed to save category after ${maxRetries} attempts: ${saveError.message}`,
+            )
+          }
+
+          // Wait before retry
+          await new Promise((resolve) => setTimeout(resolve, 100 * retryCount))
+        }
+      }
+
+      if (!savedCategory) {
+        throw new Error('Category save returned no data')
+      }
+
+      // Update local state immediately for optimistic updates
+      categories.value.push(savedCategory)
+
+      console.log('Category added successfully:', savedCategory.name)
+      return savedCategory
     } catch (err) {
       error.value = err.message
       console.error('Failed to add category:', err)
