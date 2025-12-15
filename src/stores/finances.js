@@ -14,7 +14,7 @@ import { generateId } from 'src/utils/schemas'
 
 export const useFinancesStore = defineStore('finances', () => {
   const database = useDatabase()
-  const { createTransaction, getUserWithData, saveDoc, deleteDoc } = database
+  const { createTransaction, getUserWithData, saveDoc, deleteDoc, localDB } = database
   const usersStore = useUsersStore()
   const categoriesStore = useCategoriesStore()
   const budgetsStore = useBudgetsStore()
@@ -25,15 +25,29 @@ export const useFinancesStore = defineStore('finances', () => {
   const isLoading = ref(false)
   const error = ref(null)
   const activeWalletId = ref(null)
+  const lastLoadTime = ref(null)
 
-  // Sync user's transactionIds array with actual transactions in database
+  // Enhanced sync user's transactionIds array with actual transactions in database
   async function syncUserTransactionIds() {
-    if (!usersStore.currentUser) return
+    if (!usersStore.currentUser) {
+      console.log('FinancesStore: No user to sync transactionIds')
+      return
+    }
 
     try {
+      console.log('FinancesStore: Starting transactionIds sync...')
+
+      // Get fresh user data
       const userData = await getUserWithData(usersStore.currentUser._id)
       const actualTransactionIds = userData.transactions.map((t) => t._id)
       const storedTransactionIds = usersStore.currentUser.transactionIds || []
+
+      console.log('FinancesStore: Sync analysis:', {
+        actualTransactions: actualTransactionIds.length,
+        storedIds: storedTransactionIds.length,
+        actualIds: actualTransactionIds,
+        storedIdsList: storedTransactionIds,
+      })
 
       // Check if there's a mismatch
       const hasMismatch =
@@ -41,7 +55,7 @@ export const useFinancesStore = defineStore('finances', () => {
         actualTransactionIds.some((id) => !storedTransactionIds.includes(id))
 
       if (hasMismatch) {
-        console.log('Syncing user transactionIds array:', {
+        console.log('FinancesStore: Syncing user transactionIds array:', {
           actual: actualTransactionIds.length,
           stored: storedTransactionIds.length,
         })
@@ -53,17 +67,22 @@ export const useFinancesStore = defineStore('finances', () => {
         await saveDoc(updatedUser)
         usersStore.saveCurrentUser(updatedUser)
 
-        console.log('User transactionIds synchronized')
+        console.log('FinancesStore: User transactionIds synchronized successfully')
+      } else {
+        console.log('FinancesStore: TransactionIds already in sync')
       }
     } catch (err) {
-      console.warn('Failed to sync user transactionIds:', err)
+      console.warn('FinancesStore: Failed to sync user transactionIds:', err)
+      // Don't throw - sync failure shouldn't break data loading
     }
   }
 
-  // Load all user financial data
-  async function loadAll() {
+  // Enhanced load all user financial data with comprehensive debugging
+  async function loadAll(retryCount = 0) {
+    const maxRetries = 3
+
     if (!usersStore.currentUser) {
-      console.warn('No user logged in, cannot load financial data')
+      console.warn('FinancesStore: No user logged in, cannot load financial data')
       wallets.value = []
       transactions.value = []
       return
@@ -73,33 +92,136 @@ export const useFinancesStore = defineStore('finances', () => {
     error.value = null
 
     try {
+      console.log(`FinancesStore: Loading data (attempt ${retryCount + 1}/${maxRetries + 1})`)
+      console.log('FinancesStore: Current user:', {
+        id: usersStore.currentUser._id,
+        name: usersStore.currentUser.name,
+        transactionIdsCount: (usersStore.currentUser.transactionIds || []).length,
+      })
+
+      // Get user data with all related documents
       const userData = await getUserWithData(usersStore.currentUser._id)
 
-      wallets.value = userData.wallets
-      transactions.value = userData.transactions
+      console.log('FinancesStore: Raw user data loaded:', {
+        userId: userData.user?._id,
+        wallets: userData.wallets?.length || 0,
+        transactions: userData.transactions?.length || 0,
+        categories: userData.categories?.length || 0,
+        budgets: userData.budgets?.length || 0,
+      })
+
+      // Set the loaded data
+      wallets.value = userData.wallets || []
+      transactions.value = userData.transactions || []
+
+      // Debug transaction data
+      if (transactions.value.length > 0) {
+        console.log('FinancesStore: Sample transactions:', transactions.value.slice(0, 3))
+      }
 
       // Set active wallet if none selected
       if (!activeWalletId.value && wallets.value.length > 0) {
         activeWalletId.value = wallets.value[0]._id
+        console.log('FinancesStore: Set active wallet:', activeWalletId.value)
       }
 
       // Sync transactionIds array to maintain data consistency
       await syncUserTransactionIds()
 
       // Update budgets with current spending
-      await budgetsStore.refreshBudgetSpent()
+      try {
+        await budgetsStore.refreshBudgetSpent()
+        console.log('FinancesStore: Budgets refreshed')
+      } catch (budgetErr) {
+        console.warn('FinancesStore: Failed to refresh budgets:', budgetErr)
+        // Don't fail the entire operation for budget issues
+      }
 
-      console.log('Loaded financial data:', {
+      lastLoadTime.value = new Date().toISOString()
+
+      console.log('FinancesStore: Data loaded successfully:', {
         wallets: wallets.value.length,
         transactions: transactions.value.length,
+        lastLoadTime: lastLoadTime.value,
+      })
+
+      // Verify data consistency
+      const storedIds = usersStore.currentUser.transactionIds || []
+      const actualIds = transactions.value.map((t) => t._id)
+      const matchingIds = storedIds.filter((id) => actualIds.includes(id))
+
+      console.log('FinancesStore: Data consistency check:', {
+        storedIds: storedIds.length,
+        actualTransactions: actualIds.length,
+        matchingIds: matchingIds.length,
+        matchRate:
+          storedIds.length > 0
+            ? ((matchingIds.length / storedIds.length) * 100).toFixed(1) + '%'
+            : 'N/A',
       })
     } catch (err) {
-      error.value = err.message
-      console.error('Failed to load financial data:', err)
+      console.error('FinancesStore: Failed to load financial data:', err)
+      error.value = err.message || 'Failed to load financial data'
+
+      if (retryCount < maxRetries) {
+        console.log(`FinancesStore: Retrying in 1 second... (${retryCount + 1}/${maxRetries})`)
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+        return loadAll(retryCount + 1)
+      }
+
+      // If all retries failed, set empty arrays
       wallets.value = []
       transactions.value = []
     } finally {
       isLoading.value = false
+    }
+  }
+
+  // Direct database access for debugging
+  async function debugDatabaseAccess() {
+    if (!usersStore.currentUser) {
+      console.log('FinancesStore: No user for debug access')
+      return
+    }
+
+    try {
+      console.log('FinancesStore: === DEBUG DATABASE ACCESS ===')
+
+      // Check user document
+      const userDoc = await localDB.get(usersStore.currentUser._id)
+      console.log('FinancesStore: User document:', userDoc)
+
+      // Check all transactions for this user using direct query
+      const userTransactions = await localDB.find({
+        selector: { type: 'transaction', userId: usersStore.currentUser._id },
+      })
+
+      console.log('FinancesStore: Direct transaction query result:', {
+        count: userTransactions.docs.length,
+        transactions: userTransactions.docs,
+      })
+
+      // Check if transactions match stored IDs
+      const storedIds = userDoc.transactionIds || []
+      const actualIds = userTransactions.docs.map((t) => t._id)
+      const matches = storedIds.filter((id) => actualIds.includes(id))
+
+      console.log('FinancesStore: ID matching analysis:', {
+        storedIds: storedIds.length,
+        actualIds: actualIds.length,
+        matches: matches.length,
+        missingInDb: storedIds.filter((id) => !actualIds.includes(id)),
+        extraInDb: actualIds.filter((id) => !storedIds.includes(id)),
+      })
+
+      return {
+        userDoc,
+        userTransactions: userTransactions.docs,
+        matchingIds: matches,
+      }
+    } catch (err) {
+      console.error('FinancesStore: Debug access failed:', err)
+      return null
     }
   }
 
@@ -131,11 +253,11 @@ export const useFinancesStore = defineStore('finances', () => {
       await saveDoc(newWallet)
       wallets.value.push(newWallet)
 
-      console.log('Wallet added:', newWallet.name)
+      console.log('FinancesStore: Wallet added:', newWallet.name)
       return newWallet
     } catch (err) {
       error.value = err.message
-      console.error('Failed to add wallet:', err)
+      console.error('FinancesStore: Failed to add wallet:', err)
       throw err
     } finally {
       isLoading.value = false
@@ -166,11 +288,11 @@ export const useFinancesStore = defineStore('finances', () => {
       await saveDoc(updatedWallet)
       wallets.value[walletIndex] = updatedWallet
 
-      console.log('Wallet updated:', updatedWallet.name)
+      console.log('FinancesStore: Wallet updated:', updatedWallet.name)
       return updatedWallet
     } catch (err) {
       error.value = err.message
-      console.error('Failed to update wallet:', err)
+      console.error('FinancesStore: Failed to update wallet:', err)
       throw err
     } finally {
       isLoading.value = false
@@ -230,12 +352,12 @@ export const useFinancesStore = defineStore('finances', () => {
       // Refresh budgets to update spent amounts
       await budgetsStore.refreshBudgetSpent()
 
-      console.log('Transaction added:', savedTransaction._id)
-      console.log('Updated user transactionIds:', updatedTransactionIds)
+      console.log('FinancesStore: Transaction added:', savedTransaction._id)
+      console.log('FinancesStore: Updated user transactionIds:', updatedTransactionIds)
       return savedTransaction
     } catch (err) {
       error.value = err.message
-      console.error('Failed to add transaction:', err)
+      console.error('FinancesStore: Failed to add transaction:', err)
       throw err
     } finally {
       isLoading.value = false
@@ -252,14 +374,14 @@ export const useFinancesStore = defineStore('finances', () => {
     error.value = null
 
     try {
-      console.log('updateTransaction called with:', { transactionId, updates })
+      console.log('FinancesStore: updateTransaction called with:', { transactionId, updates })
 
       // Always fetch the fresh transaction data from database to avoid stale _rev
       let freshTransaction
       try {
-        freshTransaction = await database.localDB.get(transactionId)
+        freshTransaction = await localDB.get(transactionId)
         console.log(
-          'Retrieved fresh transaction data:',
+          'FinancesStore: Retrieved fresh transaction data:',
           freshTransaction._id,
           'rev:',
           freshTransaction._rev,
@@ -272,7 +394,7 @@ export const useFinancesStore = defineStore('finances', () => {
       }
 
       const oldTransaction = transactions.value.find((t) => t._id === transactionId)
-      console.log('Found existing transaction in store:', oldTransaction)
+      console.log('FinancesStore: Found existing transaction in store:', oldTransaction)
 
       // Merge the fresh transaction with updates, preserving the latest _rev
       const updatedTransaction = {
@@ -282,7 +404,10 @@ export const useFinancesStore = defineStore('finances', () => {
         updatedAt: new Date().toISOString(),
       }
 
-      console.log('Prepared updated transaction with fresh data:', updatedTransaction)
+      console.log(
+        'FinancesStore: Prepared updated transaction with fresh data:',
+        updatedTransaction,
+      )
 
       // Save with conflict resolution (now handled in saveDoc)
       const savedTransaction = await saveDoc(updatedTransaction)
@@ -297,7 +422,7 @@ export const useFinancesStore = defineStore('finances', () => {
       }
 
       console.log(
-        'Updated transaction in local store:',
+        'FinancesStore: Updated transaction in local store:',
         savedTransaction._id,
         'new rev:',
         savedTransaction._rev,
@@ -314,12 +439,12 @@ export const useFinancesStore = defineStore('finances', () => {
       // Refresh budgets
       await budgetsStore.refreshBudgetSpent()
 
-      console.log('Transaction updated successfully:', savedTransaction._id)
+      console.log('FinancesStore: Transaction updated successfully:', savedTransaction._id)
       return savedTransaction
     } catch (err) {
       error.value = err.message
-      console.error('Failed to update transaction:', err)
-      console.error('Error stack:', err.stack)
+      console.error('FinancesStore: Failed to update transaction:', err)
+      console.error('FinancesStore: Error stack:', err.stack)
 
       // Provide more specific error messages
       if (err.name === 'conflict') {
@@ -369,11 +494,11 @@ export const useFinancesStore = defineStore('finances', () => {
       // Refresh budgets
       await budgetsStore.refreshBudgetSpent()
 
-      console.log('Transaction deleted:', transactionId)
-      console.log('Updated user transactionIds:', updatedTransactionIds)
+      console.log('FinancesStore: Transaction deleted:', transactionId)
+      console.log('FinancesStore: Updated user transactionIds:', updatedTransactionIds)
     } catch (err) {
       error.value = err.message
-      console.error('Failed to delete transaction:', err)
+      console.error('FinancesStore: Failed to delete transaction:', err)
       throw err
     } finally {
       isLoading.value = false
@@ -496,7 +621,13 @@ export const useFinancesStore = defineStore('finances', () => {
   function watchUserChanges() {
     watch(
       () => usersStore.currentUser,
-      (newUser) => {
+      (newUser, oldUser) => {
+        console.log('FinancesStore: User changed:', {
+          newUser: !!newUser,
+          oldUser: !!oldUser,
+          userId: newUser?._id,
+        })
+
         if (newUser) {
           loadAll()
         } else {
@@ -519,7 +650,7 @@ export const useFinancesStore = defineStore('finances', () => {
           walletType: 'personal',
         })
       } catch (err) {
-        console.warn('Failed to create default wallet:', err)
+        console.warn('FinancesStore: Failed to create default wallet:', err)
       }
     }
   }
@@ -531,6 +662,7 @@ export const useFinancesStore = defineStore('finances', () => {
     isLoading,
     error,
     activeWalletId,
+    lastLoadTime,
 
     // Computed
     activeWalletTransactions,
@@ -542,6 +674,7 @@ export const useFinancesStore = defineStore('finances', () => {
     // Methods
     loadAll,
     syncUserTransactionIds,
+    debugDatabaseAccess,
     addWallet,
     updateWallet,
     addTransaction,
