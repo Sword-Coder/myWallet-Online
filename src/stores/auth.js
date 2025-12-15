@@ -78,6 +78,8 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
   const isAuthenticated = ref(false)
   const isOnline = ref(navigator.onLine)
+  const showSplashScreen = ref(false)
+  const googleAuthCompleted = ref(false)
   const usersStore = useUsersStore()
   const { initializeUserData } = useUserData()
   const { sendWelcomeEmail } = useEmail()
@@ -94,8 +96,10 @@ export const useAuthStore = defineStore('auth', () => {
       await loginWithGoogle(userInfo)
       console.log('Google login successful, user authenticated:', isAuthenticated.value)
 
-      // Navigate to home after successful login
-      window.location.href = '/#/home'
+      // Set flag to indicate Google auth completed and navigation is needed
+      googleAuthCompleted.value = true
+
+      return true
     } catch (error) {
       console.error('Google auth failed:', error)
       throw error
@@ -113,6 +117,12 @@ export const useAuthStore = defineStore('auth', () => {
   window.addEventListener('offline', () => {
     isOnline.value = false
   })
+
+  // Function to show splash screen after login
+  function triggerSplashScreen() {
+    showSplashScreen.value = true
+    console.log('Splash screen triggered after login')
+  }
 
   async function loginWithGoogle(userInfo) {
     console.log('Starting Google login with user info:', userInfo)
@@ -209,15 +219,20 @@ export const useAuthStore = defineStore('auth', () => {
       // Ensure user is saved in the users store
       usersStore.saveCurrentUser(dbUser)
 
-      // Set authentication state
+      // Sync auth store state
       user.value = dbUser
       isAuthenticated.value = true
+
+      // Trigger splash screen for post-login loading
+      triggerSplashScreen()
 
       console.log(
         'Authentication state set - user:',
         user.value,
         'authenticated:',
         isAuthenticated.value,
+        'splash screen triggered:',
+        showSplashScreen.value,
       )
       return user.value
     } catch (error) {
@@ -281,8 +296,13 @@ export const useAuthStore = defineStore('auth', () => {
         throw new Error('User not found')
       }
 
+      // Sync auth store state
       user.value = dbUser
       isAuthenticated.value = true
+
+      // Trigger splash screen for post-login loading
+      triggerSplashScreen()
+
       return user.value
     } catch (error) {
       console.error('Login failed:', error)
@@ -338,8 +358,12 @@ export const useAuthStore = defineStore('auth', () => {
 
   function checkAuth() {
     console.log('Checking authentication state...')
+
+    // Initialize users store and get current user
     usersStore.initialize()
-    if (usersStore.currentUser) {
+
+    // Sync auth store state with users store
+    if (usersStore.currentUser && usersStore.currentUser._id) {
       user.value = usersStore.currentUser
       isAuthenticated.value = true
       console.log(
@@ -347,10 +371,16 @@ export const useAuthStore = defineStore('auth', () => {
         user.value?.email,
         'authenticated:',
         isAuthenticated.value,
+        'userId:',
+        user.value._id,
       )
     } else {
+      user.value = null
+      isAuthenticated.value = false
       console.log('No authenticated user found')
     }
+
+    return isAuthenticated.value
   }
 
   async function verifyEmail(token) {
@@ -437,6 +467,8 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     isAuthenticated,
     isOnline,
+    showSplashScreen,
+    googleAuthCompleted,
     loginWithGoogle,
     signupWithGoogle,
     login,
@@ -445,5 +477,7 @@ export const useAuthStore = defineStore('auth', () => {
     checkAuth,
     verifyEmail,
     getUserType,
+    triggerSplashScreen,
+    handleGoogleAuth,
   }
 })
