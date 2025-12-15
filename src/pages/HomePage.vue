@@ -138,9 +138,12 @@ const activeWallet = ref('all')
 const sharedMembers = ref([])
 
 // State from stores - use storeToRefs to maintain reactivity
-const { wallets: storeWallets, totals } = storeToRefs(financesStore)
+const { wallets: storeWallets } = storeToRefs(financesStore)
 const { currentUser } = storeToRefs(usersStore)
 const { categories } = storeToRefs(categoriesStore)
+
+// Access computed properties directly from store instance
+const totals = computed(() => financesStore.totals)
 
 // Date
 const currentMonth = computed(() =>
