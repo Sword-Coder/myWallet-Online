@@ -17,40 +17,89 @@ export const useBudgetsStore = defineStore('budgets', () => {
   const isLoading = ref(false)
   const error = ref(null)
 
-  // Load budgets for current user
+  // Load budgets for current user with enhanced debugging
   async function loadBudgets() {
-    if (!usersStore.currentUser) {
-      console.warn('No user logged in, cannot load budgets')
+    console.log('=== BUDGETS LOAD START ===')
+
+    // Enhanced authentication check
+    if (!usersStore.currentUser || !usersStore.currentUser._id) {
+      console.warn('❌ No user logged in or missing user ID, cannot load budgets')
       budgets.value = []
+      isLoading.value = false
       return
     }
+
+    console.log('✅ User authenticated, loading budgets for:', usersStore.currentUser._id)
 
     isLoading.value = true
     error.value = null
 
     try {
-      const userBudgets = await getUserBudgets(usersStore.currentUser._id)
+      // First, try to get user data with budgets included
+      console.log('📊 Fetching user data including budgets...')
+      const userData = await usersStore.loadUserData(usersStore.currentUser._id)
 
-      // Update spent amounts based on actual transactions
-      const transactions = await getUserTransactions(usersStore.currentUser._id)
-      const updatedBudgets = userBudgets.map((budget) => {
-        const spent = calculateBudgetSpending(
-          transactions,
-          budget.categoryId,
-          budget.periodStart,
-          budget.periodEnd,
-        )
-        return { ...budget, spent }
-      })
+      if (userData && userData.budgets && userData.budgets.length > 0) {
+        console.log('✅ Found budgets in user data:', userData.budgets.length, 'budgets')
 
-      budgets.value = updatedBudgets
-      console.log('Loaded budgets:', updatedBudgets.length)
+        // Update spent amounts based on actual transactions
+        const transactions = userData.transactions || []
+        console.log('💰 Processing transactions for spent calculation:', transactions.length)
+
+        const updatedBudgets = userData.budgets.map((budget) => {
+          const spent = calculateBudgetSpending(
+            transactions,
+            budget.categoryId,
+            budget.periodStart,
+            budget.periodEnd,
+          )
+          return { ...budget, spent }
+        })
+
+        budgets.value = updatedBudgets
+        console.log('✅ Budgets loaded successfully:', updatedBudgets.length)
+        console.log('Sample budget data:', updatedBudgets[0])
+      } else {
+        console.log('⚠️ No budgets found in user data, trying direct database query...')
+
+        // Fallback to direct database query
+        const userBudgets = await getUserBudgets(usersStore.currentUser._id)
+        console.log('📋 Direct database query result:', userBudgets.length, 'budgets')
+
+        if (userBudgets.length === 0) {
+          console.log('💡 No budgets exist yet for this user - this is normal for new users')
+          budgets.value = []
+        } else {
+          // Update spent amounts for direct query results
+          const transactions = await getUserTransactions(usersStore.currentUser._id)
+          const updatedBudgets = userBudgets.map((budget) => {
+            const spent = calculateBudgetSpending(
+              transactions,
+              budget.categoryId,
+              budget.periodStart,
+              budget.periodEnd,
+            )
+            return { ...budget, spent }
+          })
+
+          budgets.value = updatedBudgets
+          console.log('✅ Budgets loaded from direct query:', updatedBudgets.length)
+        }
+      }
     } catch (err) {
       error.value = err.message
-      console.error('Failed to load budgets:', err)
+      console.error('❌ Failed to load budgets:', err)
       budgets.value = []
+
+      // Provide more specific error information
+      if (err.message.includes('not_found')) {
+        console.log('🔍 User not found in database - this might be a sync issue')
+      } else if (err.message.includes('unauthorized')) {
+        console.log('🔐 Authentication issue - user may need to re-login')
+      }
     } finally {
       isLoading.value = false
+      console.log('=== BUDGETS LOAD END ===')
     }
   }
 
@@ -106,8 +155,22 @@ export const useBudgetsStore = defineStore('budgets', () => {
         updatedAt: new Date().toISOString(),
       }
 
+      console.log('💾 Saving new budget:', newBudget)
       await saveDoc(newBudget)
       budgets.value.push(newBudget)
+
+      // Update user's budgetIds array
+      try {
+        const currentUser = usersStore.currentUser
+        if (currentUser && currentUser._id) {
+          const updatedBudgetIds = [...(currentUser.budgetIds || []), newBudget._id]
+          await usersStore.updateUserProfile({ budgetIds: updatedBudgetIds })
+          console.log('Updated user budgetIds array:', updatedBudgetIds)
+        }
+      } catch (updateError) {
+        console.warn('Failed to update user budgetIds array:', updateError)
+        // Don't fail the budget creation if this fails
+      }
 
       console.log('Budget added for category:', budgetData.categoryId)
       return newBudget
@@ -172,6 +235,19 @@ export const useBudgetsStore = defineStore('budgets', () => {
 
       await saveDoc({ ...budget, _deleted: true })
       budgets.value = budgets.value.filter((b) => b._id !== budgetId)
+
+      // Update user's budgetIds array by removing the deleted budget ID
+      try {
+        const currentUser = usersStore.currentUser
+        if (currentUser && currentUser._id && currentUser.budgetIds) {
+          const updatedBudgetIds = currentUser.budgetIds.filter((id) => id !== budgetId)
+          await usersStore.updateUserProfile({ budgetIds: updatedBudgetIds })
+          console.log('Updated user budgetIds array after deletion:', updatedBudgetIds)
+        }
+      } catch (updateError) {
+        console.warn('Failed to update user budgetIds array after deletion:', updateError)
+        // Don't fail the budget deletion if this fails
+      }
 
       console.log('Budget deleted:', budgetId)
     } catch (err) {
@@ -334,6 +410,13 @@ export const useBudgetsStore = defineStore('budgets', () => {
     )
   }
 
+  // Force refresh budgets from database
+  async function forceRefreshBudgets() {
+    console.log('🔄 Force refreshing budgets from database...')
+    budgets.value = [] // Clear current budgets
+    await loadBudgets() // Reload from database
+  }
+
   return {
     // State
     budgets,
@@ -358,5 +441,6 @@ export const useBudgetsStore = defineStore('budgets', () => {
     refreshBudgetSpent,
     initializeDefaultBudgets,
     watchUserChanges,
+    forceRefreshBudgets,
   }
 })
