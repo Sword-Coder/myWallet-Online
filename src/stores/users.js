@@ -13,6 +13,7 @@ export const useUsersStore = defineStore('users', () => {
   const userData = ref(null)
   const isLoading = ref(false)
   const error = ref(null)
+  const isInitialized = ref(false)
 
   // Load current user from localStorage
   function loadCurrentUser() {
@@ -20,6 +21,11 @@ export const useUsersStore = defineStore('users', () => {
       const saved = localStorage.getItem('currentUser')
       if (saved && saved !== 'undefined' && saved.trim() !== '') {
         currentUser.value = JSON.parse(saved)
+        console.log('UsersStore: User loaded from localStorage:', {
+          id: currentUser.value?._id,
+          name: currentUser.value?.name,
+          hasTransactionIds: !!(currentUser.value?.transactionIds?.length > 0),
+        })
         return true
       } else {
         // Clear invalid data from localStorage
@@ -28,7 +34,7 @@ export const useUsersStore = defineStore('users', () => {
         }
       }
     } catch (err) {
-      console.error('Failed to load current user:', err)
+      console.error('UsersStore: Failed to load current user:', err)
       // Clear corrupted data from localStorage
       localStorage.removeItem('currentUser')
     }
@@ -40,8 +46,13 @@ export const useUsersStore = defineStore('users', () => {
     try {
       currentUser.value = user
       localStorage.setItem('currentUser', JSON.stringify(user))
+      console.log('UsersStore: User saved to localStorage:', {
+        id: user?._id,
+        name: user?.name,
+        hasTransactionIds: !!(user?.transactionIds?.length > 0),
+      })
     } catch (err) {
-      console.error('Failed to save current user:', err)
+      console.error('UsersStore: Failed to save current user:', err)
     }
   }
 
@@ -50,6 +61,8 @@ export const useUsersStore = defineStore('users', () => {
     currentUser.value = null
     userData.value = null
     localStorage.removeItem('currentUser')
+    isInitialized.value = false
+    console.log('UsersStore: User cleared')
   }
 
   // Register new user
@@ -69,15 +82,16 @@ export const useUsersStore = defineStore('users', () => {
         emailVerified: userData.emailVerified || false,
       })
 
-      console.log('User created successfully:', userDoc)
+      console.log('UsersStore: User created successfully:', userDoc)
 
       // Save as current user
       saveCurrentUser(userDoc)
+      isInitialized.value = true
 
       return userDoc
     } catch (err) {
       error.value = err.message
-      console.error('Registration failed:', err)
+      console.error('UsersStore: Registration failed:', err)
       throw err
     } finally {
       isLoading.value = false
@@ -126,11 +140,18 @@ export const useUsersStore = defineStore('users', () => {
 
       // Save user as current user
       saveCurrentUser(dbUser)
+      isInitialized.value = true
+
+      console.log('UsersStore: User logged in successfully:', {
+        id: dbUser._id,
+        name: dbUser.name,
+        hasTransactionIds: !!(dbUser.transactionIds?.length > 0),
+      })
 
       return dbUser
     } catch (err) {
       error.value = err.message
-      console.error('Login failed:', err)
+      console.error('UsersStore: Login failed:', err)
       throw err
     } finally {
       isLoading.value = false
@@ -158,7 +179,7 @@ export const useUsersStore = defineStore('users', () => {
       return data
     } catch (err) {
       error.value = err.message
-      console.error('Failed to load user data:', err)
+      console.error('UsersStore: Failed to load user data:', err)
       throw err
     } finally {
       isLoading.value = false
@@ -187,7 +208,7 @@ export const useUsersStore = defineStore('users', () => {
         auth: { username: dbUsername, password: dbPassword },
       })
 
-      console.log('Force reloading user data with database sync...')
+      console.log('UsersStore: Force reloading user data with database sync...')
 
       await new Promise((resolve) => {
         const timeout = setTimeout(resolve, 3000) // 3 second timeout
@@ -199,12 +220,12 @@ export const useUsersStore = defineStore('users', () => {
           })
           .on('complete', () => {
             clearTimeout(timeout)
-            console.log('Force sync completed')
+            console.log('UsersStore: Force sync completed')
             resolve()
           })
           .on('error', (err) => {
             clearTimeout(timeout)
-            console.warn('Force sync failed:', err)
+            console.warn('UsersStore: Force sync failed:', err)
             resolve() // Continue even if sync fails
           })
       })
@@ -213,7 +234,7 @@ export const useUsersStore = defineStore('users', () => {
       const data = await getUserWithData(targetUserId)
       userData.value = data
 
-      console.log('User data force reloaded:', {
+      console.log('UsersStore: User data force reloaded:', {
         userId: data.user?._id,
         wallets: data.wallets?.length || 0,
         categories: data.categories?.length || 0,
@@ -224,7 +245,7 @@ export const useUsersStore = defineStore('users', () => {
       return data
     } catch (err) {
       error.value = err.message
-      console.error('Failed to force reload user data:', err)
+      console.error('UsersStore: Failed to force reload user data:', err)
       throw err
     } finally {
       isLoading.value = false
@@ -254,7 +275,7 @@ export const useUsersStore = defineStore('users', () => {
       const { saveDoc } = useDatabase()
       const savedUser = await saveDoc(updatedUser, 'user')
 
-      console.log('User profile updated in database:', savedUser)
+      console.log('UsersStore: User profile updated in database:', savedUser)
 
       // Update local state only if we updated the current user
       if (!user || (user && user._id === currentUser.value?._id)) {
@@ -264,7 +285,7 @@ export const useUsersStore = defineStore('users', () => {
       return savedUser
     } catch (err) {
       error.value = err.message
-      console.error('Failed to update user profile:', err)
+      console.error('UsersStore: Failed to update user profile:', err)
       throw err
     } finally {
       isLoading.value = false
@@ -293,7 +314,7 @@ export const useUsersStore = defineStore('users', () => {
 
     // This would involve updating wallet permissions
     // Implementation would depend on the sharing mechanism
-    console.log('Sharing wallet:', walletId, 'with user:', userIdToShareWith)
+    console.log('UsersStore: Sharing wallet:', walletId, 'with user:', userIdToShareWith)
 
     // For now, just update the user's sharedWalletIds
     const updatedUser = {
@@ -322,9 +343,58 @@ export const useUsersStore = defineStore('users', () => {
     return updatedUser
   }
 
-  // Initialize store
+  // Initialize store with better error handling
   function initialize() {
-    loadCurrentUser()
+    try {
+      console.log('UsersStore: Initializing store...')
+      const loaded = loadCurrentUser()
+      isInitialized.value = true
+      console.log('UsersStore: Store initialized:', {
+        userLoaded: loaded,
+        hasUser: !!currentUser.value,
+        userId: currentUser.value?._id,
+      })
+      return loaded
+    } catch (err) {
+      console.error('UsersStore: Failed to initialize store:', err)
+      isInitialized.value = true // Still mark as initialized to prevent infinite loading
+      return false
+    }
+  }
+
+  // Wait for store initialization
+  async function waitForInitialization(maxWait = 5000) {
+    const startTime = Date.now()
+
+    // If already initialized, check if we have a user
+    if (isInitialized.value) {
+      if (currentUser.value) {
+        console.log('UsersStore: Already initialized with user')
+        return true
+      } else {
+        console.log('UsersStore: Initialized but no user found')
+        return false
+      }
+    }
+
+    // Wait for initialization
+    while (Date.now() - startTime < maxWait) {
+      if (isInitialized.value) {
+        if (currentUser.value) {
+          console.log('UsersStore: Initialization complete with user')
+          return true
+        } else {
+          console.log('UsersStore: Initialization complete but no user')
+          return false
+        }
+      }
+
+      // Wait a bit before checking again
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+
+    console.log('UsersStore: Initialization timeout')
+    return false
   }
 
   return {
@@ -333,6 +403,7 @@ export const useUsersStore = defineStore('users', () => {
     userData,
     isLoading,
     error,
+    isInitialized,
 
     // User management
     registerUser,
@@ -352,5 +423,6 @@ export const useUsersStore = defineStore('users', () => {
     saveCurrentUser,
     clearCurrentUser,
     initialize,
+    waitForInitialization,
   }
 })
