@@ -15,20 +15,67 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from 'src/stores/auth'
+import { useUsersStore } from 'src/stores/users'
 
 const showSplash = ref(true)
+const authStore = useAuthStore()
+const usersStore = useUsersStore()
+const router = useRouter()
 
 function hideSplash() {
   showSplash.value = false
 }
 
+async function loadUserDataAfterLogin() {
+  try {
+    console.log('Loading user data after login...')
+    if (authStore.user && authStore.user._id) {
+      await usersStore.loadUserData()
+      console.log('User data loaded successfully')
+    }
+  } catch (error) {
+    console.error('Failed to load user data after login:', error)
+  } finally {
+    hideSplash()
+  }
+}
+
 onMounted(() => {
-  // Auto-hide splash after 2.5 seconds
+  // Auto-hide splash after 2.5 seconds on initial app load
   setTimeout(() => {
-    showSplash.value = false
+    if (showSplash.value) {
+      hideSplash()
+    }
   }, 2500)
 })
+
+// Watch for splash screen trigger from auth store (e.g., after Google login)
+watch(
+  () => authStore.showSplashScreen,
+  (newValue) => {
+    if (newValue) {
+      console.log('Splash screen triggered by auth store')
+      showSplash.value = true
+      loadUserDataAfterLogin()
+    }
+  },
+)
+
+// Watch for Google auth completion and handle navigation
+watch(
+  () => authStore.googleAuthCompleted,
+  (newValue) => {
+    if (newValue) {
+      console.log('Google auth completed, navigating to home')
+      router.push('/home')
+      // Reset the flag
+      authStore.googleAuthCompleted = false
+    }
+  },
+)
 </script>
 
 <style scoped>
