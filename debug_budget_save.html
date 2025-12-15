@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Budget Save Debug</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+      }
+      .debug-section {
+        margin: 20px 0;
+        padding: 15px;
+        border: 1px solid #ccc;
+      }
+      .log-entry {
+        margin: 5px 0;
+        padding: 5px;
+        background: #f5f5f5;
+      }
+      .success {
+        color: green;
+      }
+      .error {
+        color: red;
+      }
+      .warning {
+        color: orange;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Budget Save Debug Tool</h1>
+
+    <div class="debug-section">
+      <h2>Budget Save Process Analysis</h2>
+      <p><strong>Problem:</strong> Budget saves successfully but doesn't appear in the UI</p>
+
+      <h3>Potential Causes:</h3>
+      <ol>
+        <li>
+          <strong>Budget Type Mismatch</strong> - FIXED ✅
+          <ul>
+            <li>Before: budgetType was 'fixed' or 'percentage'</li>
+            <li>After: budgetType is now 'monthly' (as expected by store)</li>
+          </ul>
+        </li>
+
+        <li>
+          <strong>Categories Array Issue</strong> - FIXED ✅
+          <ul>
+            <li>Before: categories.value.find() when categories was undefined</li>
+            <li>After: Added safety checks with Array.isArray() validation</li>
+          </ul>
+        </li>
+
+        <li>
+          <strong>UI Refresh Issue</strong>
+          <ul>
+            <li>Code calls budgetsStore.loadBudgets() after saving</li>
+            <li>filteredBudgets computed should pick up changes automatically</li>
+            <li>Need to verify if budgets array is being updated correctly</li>
+          </ul>
+        </li>
+
+        <li>
+          <strong>Database Save Issue</strong>
+          <ul>
+            <li>Budget might not be actually saving to database</li>
+            <li>saveDoc() might be failing silently</li>
+            <li>User permissions or data validation issues</li>
+          </ul>
+        </li>
+      </ol>
+    </div>
+
+    <div class="debug-section">
+      <h2>Debug Steps to Run</h2>
+      <ol>
+        <li>Open browser console</li>
+        <li>Try to save a budget</li>
+        <li>
+          Check these console logs:
+          <ul>
+            <li><code>console.log('Budget data prepared:', budgetData)</code></li>
+            <li><code>console.log('Budget saved successfully:', savedBudget._id)</code></li>
+            <li><code>console.log('Loaded budgets:', updatedBudgets.length)</code></li>
+          </ul>
+        </li>
+        <li>Check if budgets array count increases after save</li>
+        <li>Verify category exists and is correctly linked</li>
+      </ol>
+    </div>
+
+    <div class="debug-section">
+      <h2>What to Look For</h2>
+      <div class="log-entry">
+        <strong>Expected Log Flow:</strong><br />
+        1. Budget data prepared: {...}<br />
+        2. Creating new budget...<br />
+        3. Budget saved successfully: budget_xxx<br />
+        4. Budget added successfully!<br />
+        5. Loaded budgets: X (should increase)<br />
+        6. Budget save process completed successfully
+      </div>
+
+      <div class="log-entry warning">
+        <strong>Red Flags to Watch For:</strong><br />
+        - Budget save returned no data<br />
+        - Loaded budgets count doesn't increase<br />
+        - Categories count is 0<br />
+        - Authentication warnings<br />
+        - Database save errors
+      </div>
+    </div>
+
+    <div class="debug-section">
+      <h2>Fixes Applied</h2>
+      <ul>
+        <li>✅ Fixed budgetType: 'monthly' instead of 'fixed'/'percentage'</li>
+        <li>✅ Added categories array safety checks</li>
+        <li>✅ Added category loading before budget save</li>
+        <li>✅ Enhanced error handling and logging</li>
+      </ul>
+    </div>
+
+    <div class="debug-section">
+      <h2>Next Steps if Still Not Working</h2>
+      <ol>
+        <li>Check if budget actually exists in database (use database viewer)</li>
+        <li>Verify user authentication is working</li>
+        <li>Check if there are any console errors during save</li>
+        <li>Verify the filteredBudgets computed is working correctly</li>
+        <li>Check if there are any date/period filtering issues</li>
+      </ol>
+    </div>
+  </body>
+</html>

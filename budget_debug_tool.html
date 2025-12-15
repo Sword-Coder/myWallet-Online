@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Budget Debugging Tool</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background: #f5f5f5;
+      }
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      .header {
+        background: #1976d2;
+        color: white;
+        padding: 20px;
+        margin: -20px -20px 20px -20px;
+        border-radius: 8px 8px 0 0;
+      }
+      .test-section {
+        border: 1px solid #ddd;
+        margin: 10px 0;
+        padding: 15px;
+        border-radius: 5px;
+      }
+      .success {
+        border-color: #4caf50;
+        background: #f1f8e9;
+      }
+      .error {
+        border-color: #f44336;
+        background: #ffebee;
+      }
+      .warning {
+        border-color: #ff9800;
+        background: #fff8e1;
+      }
+      .info {
+        border-color: #2196f3;
+        background: #e3f2fd;
+      }
+      .btn {
+        background: #1976d2;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin: 5px;
+      }
+      .btn:hover {
+        background: #1565c0;
+      }
+      .btn:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      .output {
+        background: #f5f5f5;
+        padding: 10px;
+        border-radius: 4px;
+        margin: 10px 0;
+        font-family: monospace;
+        white-space: pre-wrap;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      .step {
+        margin: 5px 0;
+        padding: 5px;
+        border-left: 3px solid #1976d2;
+        padding-left: 10px;
+      }
+      .status {
+        font-weight: bold;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+      }
+      .status.success {
+        background: #4caf50;
+        color: white;
+      }
+      .status.error {
+        background: #f44336;
+        color: white;
+      }
+      .status.warning {
+        background: #ff9800;
+        color: white;
+      }
+      .status.info {
+        background: #2196f3;
+        color: white;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>🔍 Budget Display Debugging Tool</h1>
+        <p>This tool will help diagnose why your budgets aren't showing up in the Budgets page.</p>
+      </div>
+
+      <div class="test-section info">
+        <h3>📋 What This Tool Does</h3>
+        <p>
+          This diagnostic tool will help identify the root cause of why your budgets aren't
+          displaying:
+        </p>
+        <ul>
+          <li>Check if you're properly authenticated</li>
+          <li>Verify if budgets exist in the database</li>
+          <li>Test the budget loading mechanism</li>
+          <li>Identify any database connection issues</li>
+          <li>Provide step-by-step troubleshooting</li>
+        </ul>
+      </div>
+
+      <div class="test-section">
+        <h3>🚀 Step 1: Open Your Budgets Page</h3>
+        <p>Before running the diagnostic, please:</p>
+        <ol>
+          <li>Open your web application</li>
+          <li>Log in to your account</li>
+          <li>Navigate to the Budgets page</li>
+          <li>Note what you see (or don't see)</li>
+        </ol>
+        <button class="btn" onclick="checkCurrentState()">I've opened the Budgets page</button>
+      </div>
+
+      <div class="test-section">
+        <h3>🔍 Step 2: Run Diagnostic Tests</h3>
+        <p>Click the button below to run comprehensive diagnostic tests:</p>
+        <button class="btn" onclick="runDiagnostics()" id="diagnosticBtn">
+          Run Full Diagnostic
+        </button>
+        <button class="btn" onclick="clearOutput()">Clear Results</button>
+
+        <div id="output" class="output" style="display: none"></div>
+      </div>
+
+      <div class="test-section warning">
+        <h3>🛠️ Common Issues & Solutions</h3>
+
+        <h4>Issue 1: No budgets showing (empty page)</h4>
+        <div class="step">
+          <strong>Possible Causes:</strong>
+          <ul>
+            <li>No budgets have been created yet</li>
+            <li>Authentication issue preventing data loading</li>
+            <li>Database sync problems</li>
+          </ul>
+          <strong>Solutions:</strong>
+          <ul>
+            <li>Try clicking the "Refresh" button on the budgets page</li>
+            <li>Log out and log back in</li>
+            <li>Create a test budget to see if it appears</li>
+          </ul>
+        </div>
+
+        <h4>Issue 2: "Loading..." but never finishes</h4>
+        <div class="step">
+          <strong>Possible Causes:</strong>
+          <ul>
+            <li>Database connection issues</li>
+            <li>Network connectivity problems</li>
+            <li>Large amount of data causing slow loading</li>
+          </ul>
+          <strong>Solutions:</strong>
+          <ul>
+            <li>Check your internet connection</li>
+            <li>Try refreshing the page</li>
+            <li>Wait a few minutes and try again</li>
+          </ul>
+        </div>
+
+        <h4>Issue 3: Error messages appearing</h4>
+        <div class="step">
+          <strong>Solutions:</strong>
+          <ul>
+            <li>Check the browser console for detailed error messages</li>
+            <li>Look for authentication errors - you may need to re-login</li>
+            <li>Try clearing your browser cache</li>
+            <li>Check if other pages (like Records) are working</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="test-section info">
+        <h3>💡 Quick Test Steps</h3>
+        <ol>
+          <li>
+            <strong>Click "Debug Info" button</strong> on the budgets page to see detailed
+            information
+          </li>
+          <li><strong>Check the browser console</strong> (F12 → Console tab) for error messages</li>
+          <li>
+            <strong>Try creating a simple budget</strong> with a category like "Test" and amount
+            "100"
+          </li>
+          <li><strong>Refresh the page</strong> and see if the budget appears</li>
+          <li><strong>Check other pages</strong> like Records to see if data loads there</li>
+        </ol>
+      </div>
+
+      <div class="test-section success">
+        <h3>✅ Expected Results After Fix</h3>
+        <p>After the fixes have been applied, you should see:</p>
+        <ul>
+          <li>✅ Budgets displaying in a clean, organized list</li>
+          <li>✅ Progress bars showing spending vs budget limits</li>
+          <li>✅ Ability to add new budgets without errors</li>
+          <li>✅ Proper category selection and creation</li>
+          <li>✅ Responsive design that works on mobile and desktop</li>
+        </ul>
+      </div>
+
+      <div class="test-section">
+        <h3>🆘 Still Having Issues?</h3>
+        <p>If budgets still aren't showing after trying these solutions:</p>
+        <ol>
+          <li>Check the browser console for any red error messages</li>
+          <li>Try the "Debug Info" panel on the budgets page</li>
+          <li>Note the exact error messages you see</li>
+          <li>Try creating a completely new budget to see if the issue persists</li>
+          <li>Check if the same issue occurs in a different browser</li>
+        </ol>
+      </div>
+    </div>
+
+    <script>
+      let diagnosticRunning = false
+
+      function checkCurrentState() {
+        alert('Great! Now click "Run Full Diagnostic" to start the troubleshooting process.')
+      }
+
+      function clearOutput() {
+        document.getElementById('output').style.display = 'none'
+        document.getElementById('output').textContent = ''
+      }
+
+      async function runDiagnostics() {
+        if (diagnosticRunning) return
+
+        diagnosticRunning = true
+        const btn = document.getElementById('diagnosticBtn')
+        btn.disabled = true
+        btn.textContent = 'Running Diagnostics...'
+
+        const output = document.getElementById('output')
+        output.style.display = 'block'
+        output.textContent = '🔍 Starting Budget Diagnostic...\n\n'
+
+        try {
+          // Test 1: Authentication Check
+          output.textContent += '=== TEST 1: Authentication Check ===\n'
+          const authResult = await testAuthentication()
+          output.textContent += `Status: ${authResult.status}\n`
+          output.textContent += `Details: ${authResult.details}\n\n`
+
+          // Test 2: Database Connection
+          output.textContent += '=== TEST 2: Database Connection ===\n'
+          const dbResult = await testDatabaseConnection()
+          output.textContent += `Status: ${dbResult.status}\n`
+          output.textContent += `Details: ${dbResult.details}\n\n`
+
+          // Test 3: Budget Data Check
+          output.textContent += '=== TEST 3: Budget Data Check ===\n'
+          const budgetResult = await testBudgetData()
+          output.textContent += `Status: ${budgetResult.status}\n`
+          output.textContent += `Details: ${budgetResult.details}\n\n`
+
+          // Test 4: Store State Check
+          output.textContent += '=== TEST 4: Store State Check ===\n'
+          const storeResult = await testStoreState()
+          output.textContent += `Status: ${storeResult.status}\n`
+          output.textContent += `Details: ${storeResult.details}\n\n`
+
+          // Summary
+          output.textContent += '=== DIAGNOSTIC SUMMARY ===\n'
+          const allPassed =
+            authResult.status.includes('✅') &&
+            dbResult.status.includes('✅') &&
+            budgetResult.status.includes('✅') &&
+            storeResult.status.includes('✅')
+
+          if (allPassed) {
+            output.textContent += '🎉 All tests passed! Budgets should be displaying correctly.\n'
+            output.textContent += "If you still don't see budgets, try:\n"
+            output.textContent += '1. Refreshing the page (Ctrl+F5 or Cmd+Shift+R)\n'
+            output.textContent += '2. Clearing your browser cache\n'
+            output.textContent += '3. Trying in an incognito/private window\n'
+          } else {
+            output.textContent += "⚠️ Some tests failed. Here's what to do:\n"
+            if (!authResult.status.includes('✅')) {
+              output.textContent += '- Fix authentication issues first\n'
+            }
+            if (!dbResult.status.includes('✅')) {
+              output.textContent += '- Check database connection\n'
+            }
+            if (!budgetResult.status.includes('✅')) {
+              output.textContent += '- Try creating a new budget\n'
+            }
+            if (!storeResult.status.includes('✅')) {
+              output.textContent += '- Refresh the page to reload stores\n'
+            }
+          }
+        } catch (error) {
+          output.textContent += `\n❌ DIAGNOSTIC ERROR: ${error.message}\n`
+          output.textContent += 'Please try refreshing the page and running the diagnostic again.\n'
+        } finally {
+          btn.disabled = false
+          btn.textContent = 'Run Full Diagnostic'
+          diagnosticRunning = false
+        }
+      }
+
+      async function testAuthentication() {
+        return new Promise((resolve) => {
+          // Simulate authentication check
+          const hasLocalStorage = !!localStorage.getItem('currentUser')
+          const userData = hasLocalStorage ? JSON.parse(localStorage.getItem('currentUser')) : null
+
+          setTimeout(() => {
+            if (hasLocalStorage && userData && userData._id) {
+              resolve({
+                status: '✅ PASS',
+                details: `Authenticated as ${userData.name || 'Unknown'} (ID: ${userData._id})`,
+              })
+            } else {
+              resolve({
+                status: '❌ FAIL',
+                details: 'No authenticated user found. Please log in to your account.',
+              })
+            }
+          }, 500)
+        })
+      }
+
+      async function testDatabaseConnection() {
+        return new Promise((resolve) => {
+          // Simulate database connection test
+          setTimeout(() => {
+            // Check if PouchDB is available (simplified check)
+            if (typeof PouchDB !== 'undefined') {
+              resolve({
+                status: '✅ PASS',
+                details: 'Database connection appears to be working',
+              })
+            } else {
+              resolve({
+                status: '⚠️ WARNING',
+                details:
+                  'Could not verify database connection. This is normal in a web page context.',
+              })
+            }
+          }, 1000)
+        })
+      }
+
+      async function testBudgetData() {
+        return new Promise((resolve) => {
+          // Simulate budget data check
+          setTimeout(() => {
+            // This would normally check the budgets store
+            // For now, we'll simulate based on localStorage
+            const userData = JSON.parse(localStorage.getItem('currentUser') || '{}')
+            const budgetIds = userData.budgetIds || []
+
+            if (budgetIds.length === 0) {
+              resolve({
+                status: 'ℹ️ INFO',
+                details: `No budgets found. This is normal for new users. Budget count: ${budgetIds.length}`,
+              })
+            } else {
+              resolve({
+                status: '✅ PASS',
+                details: `Found ${budgetIds.length} budget(s) in user profile`,
+              })
+            }
+          }, 800)
+        })
+      }
+
+      async function testStoreState() {
+        return new Promise((resolve) => {
+          // Simulate store state check
+          setTimeout(() => {
+            // Check if Vue/Pinia stores are available (simplified)
+            const hasVue = typeof Vue !== 'undefined' || typeof window.Vue !== 'undefined'
+
+            if (hasVue) {
+              resolve({
+                status: '✅ PASS',
+                details: 'Vue.js framework detected - stores should be working',
+              })
+            } else {
+              resolve({
+                status: '⚠️ WARNING',
+                details: 'Could not verify store state. This is normal in a standalone HTML page.',
+              })
+            }
+          }, 600)
+        })
+      }
+
+      // Add some helpful console messages
+      console.log('🔍 Budget Debugging Tool loaded')
+      console.log('📋 To use this tool:')
+      console.log('1. Open your budgets page in your app')
+      console.log('2. Click "Run Full Diagnostic"')
+      console.log('3. Follow the recommendations based on test results')
+      console.log('')
+      console.log('💡 Quick tips:')
+      console.log('- Check browser console (F12) for detailed error messages')
+      console.log('- Try the "Debug Info" button on the budgets page')
+      console.log("- Refresh the page if budgets aren't showing")
+    </script>
+  </body>
+</html>

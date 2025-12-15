@@ -1,0 +1,105 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Budget Category Fix Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+      }
+      .test-case {
+        border: 1px solid #ccc;
+        padding: 15px;
+        margin: 10px 0;
+        border-radius: 5px;
+      }
+      .passed {
+        background-color: #d4edda;
+        border-color: #c3e6cb;
+      }
+      .failed {
+        background-color: #f8d7da;
+        border-color: #f5c6cb;
+      }
+      .info {
+        background-color: #d1ecf1;
+        border-color: #bee5eb;
+      }
+      h2 {
+        margin-top: 0;
+      }
+      code {
+        background: #f8f9fa;
+        padding: 2px 4px;
+        border-radius: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Budget Category Fix Test</h1>
+
+    <div class="test-case info">
+      <h2>Problem Description</h2>
+      <p>
+        <strong>Issue:</strong> When adding a budget, typing "motorcycle" as a category and clicking
+        save resulted in "Please select a category" error.
+      </p>
+      <p>
+        <strong>Root Cause:</strong> The <code>createNewCategory</code> function didn't handle
+        existing categories properly. When a category already existed, it would fail to set the
+        <code>categoryId</code>, leaving it empty and triggering validation failure.
+      </p>
+    </div>
+
+    <div class="test-case passed">
+      <h2>✅ Fix Applied</h2>
+      <p>
+        <strong>Solution:</strong> Updated the <code>createNewCategory</code> function in
+        <code>src/pages/BudgetsPage.vue</code> to:
+      </p>
+      <ul>
+        <li>First check if a category with the typed name already exists (case-insensitive)</li>
+        <li>If it exists, use that existing category instead of trying to create a new one</li>
+        <li>Only create a new category if one doesn't already exist</li>
+        <li>Provide appropriate user feedback for both scenarios</li>
+      </ul>
+    </div>
+
+    <div class="test-case info">
+      <h2>🔧 Technical Changes</h2>
+      <p><strong>File Modified:</strong> <code>src/pages/BudgetsPage.vue</code></p>
+      <p><strong>Function Updated:</strong> <code>createNewCategory(newCategory)</code></p>
+      <p><strong>Key Changes:</strong></p>
+      <ol>
+        <li>Added check for existing categories before creation</li>
+        <li>Enhanced error handling and user notifications</li>
+        <li>Ensured <code>form.categoryId</code> is always set properly</li>
+      </ol>
+    </div>
+
+    <div class="test-case passed">
+      <h2>✅ Expected Behavior After Fix</h2>
+      <ol>
+        <li>User types "motorcycle" in the category field</li>
+        <li>System checks if "motorcycle" category exists</li>
+        <li>If exists: Uses existing category, sets categoryId, shows success message</li>
+        <li>If doesn't exist: Creates new category, sets categoryId, shows creation message</li>
+        <li>User can successfully save the budget with amount 2500</li>
+      </ol>
+    </div>
+
+    <div class="test-case info">
+      <h2>📝 Testing Steps</h2>
+      <ol>
+        <li>Open the Budgets page</li>
+        <li>Click "Add Budget"</li>
+        <li>Type "motorcycle" in the Category field</li>
+        <li>Press Enter or click outside the field (this triggers category creation/selection)</li>
+        <li>Select "Fixed Amount" budget type</li>
+        <li>Enter "2500" as the amount</li>
+        <li>Click "Save"</li>
+        <li>✅ Budget should save successfully without "Please select a category" error</li>
+      </ol>
+    </div>
+  </body>
+</html>
