@@ -37,6 +37,8 @@
             color="white"
             text-color="dark"
             class="full-width"
+            @click="handleGoogleSignup"
+            :loading="googleLoading"
             :disable="!authStore.isOnline"
           >
             <template v-slot:default>
@@ -108,6 +110,29 @@ const router = useRouter()
 const authStore = useAuthStore()
 const $q = useQuasar()
 
+// Google Auth callback function
+async function handleGoogleAuthCallback(response) {
+  try {
+    googleLoading.value = true
+    await authStore.handleGoogleAuth(response)
+    $q.notify({
+      color: 'positive',
+      message: 'Account created successfully!',
+      icon: 'check_circle',
+    })
+    // Navigation will be handled by splash screen logic in App.vue
+  } catch (error) {
+    console.error('Google signup failed:', error)
+    $q.notify({
+      color: 'negative',
+      message: error.message || 'Google signup failed',
+      icon: 'error',
+    })
+  } finally {
+    googleLoading.value = false
+  }
+}
+
 const form = ref({
   email: '',
   password: '',
@@ -115,6 +140,7 @@ const form = ref({
 })
 const loading = ref(false)
 const googleAuthLoaded = ref(false)
+const googleLoading = ref(false)
 
 onMounted(() => {
   // Check if Google Auth is loaded and render the button
@@ -127,6 +153,7 @@ onMounted(() => {
         width: '100%',
         text: 'signup_with',
         ux_mode: 'popup',
+        callback: handleGoogleAuthCallback,
       })
     } else {
       // Retry after a short delay
@@ -135,6 +162,36 @@ onMounted(() => {
   }
   checkGoogleAuth()
 })
+
+async function handleGoogleSignup() {
+  if (!authStore.isOnline) {
+    $q.notify({
+      color: 'negative',
+      message: 'You must be online to sign up with Google',
+      icon: 'wifi_off',
+    })
+    return
+  }
+
+  googleLoading.value = true
+  try {
+    await authStore.signupWithGoogle()
+    $q.notify({
+      color: 'positive',
+      message: 'Account created successfully!',
+      icon: 'check_circle',
+    })
+    router.push('/home')
+  } catch (error) {
+    $q.notify({
+      color: 'negative',
+      message: error.message || 'Google signup failed',
+      icon: 'error',
+    })
+  } finally {
+    googleLoading.value = false
+  }
+}
 
 async function handleSignup() {
   loading.value = true
@@ -187,5 +244,55 @@ async function handleSignup() {
 .home-btn:hover {
   transform: scale(1.1);
   background: rgba(255, 255, 255, 1);
+}
+
+/* Animated Logo Styles */
+.logo-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.animated-logo {
+  width: 80px;
+  height: auto;
+  opacity: 0;
+  animation: logoFadeIn 0.8s ease-out 0.2s forwards;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.animated-logo:hover {
+  animation: logoBounce 1s ease-in-out infinite;
+  filter: drop-shadow(0 4px 8px rgba(0, 180, 255, 0.3));
+}
+
+@keyframes logoFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.8);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(5px) scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes logoBounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-8px);
+  }
+  60% {
+    transform: translateY(-4px);
+  }
 }
 </style>
