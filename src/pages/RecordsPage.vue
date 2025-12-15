@@ -342,9 +342,13 @@ const usersStore = useUsersStore()
 const budgetsStore = useBudgetsStore()
 
 // State from stores - use storeToRefs to maintain reactivity
-const { wallets, transactions, totals, spiritualGiving } = storeToRefs(financesStore)
+const { wallets, transactions } = storeToRefs(financesStore)
 const { categories } = storeToRefs(categoriesStore)
 const { currentUser } = storeToRefs(usersStore)
+
+// Access computed properties directly from store instance
+const totals = computed(() => financesStore.totals)
+const spiritualGiving = computed(() => financesStore.spiritualGiving)
 
 // Dialog state
 const showTransactionDialog = ref(false)
@@ -428,7 +432,7 @@ function openTransactionDialog() {
   form.value.amount = ''
   form.value.categoryId = ''
   form.value.notes = ''
-  form.value.walletId = wallets.value[0]?._id || ''
+  form.value.walletId = wallets[0]?._id || ''
   showTransactionDialog.value = true
 }
 
