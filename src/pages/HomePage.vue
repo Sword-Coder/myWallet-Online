@@ -40,17 +40,27 @@
     <q-card flat bordered class="q-pa-md q-mb-md">
       <div class="text-subtitle2 text-grey">Active Wallet</div>
       <div class="row items-center justify-between q-mt-sm">
-        <div class="text-h6">
-          {{
-            activeWallet === 'all'
-              ? 'All Wallets'
-              : (storeWallets.value && Array.isArray(storeWallets.value)
-                  ? storeWallets.value.find((w) => w._id === activeWallet)?.name
-                  : null) || 'No wallet selected'
-          }}
+        <div class="text-h6" :key="`wallet-${dataVersion}-${isDataReady ? 'ready' : 'loading'}`">
+          <span v-if="isDataReady && validActiveWallet">
+            {{
+              activeWallet === 'all'
+                ? 'All Wallets'
+                : (() => {
+                    const wallet = typeof validActiveWallet === 'object' ? validActiveWallet : null
+                    console.log('🔍 HomePage: Wallet display debug:', {
+                      validActiveWallet,
+                      validActiveWalletType: typeof validActiveWallet,
+                      walletName: wallet?.name || 'No wallet found',
+                    })
+                    console.log('✅ HomePage: Displaying wallet:', wallet?.name)
+                    return wallet?.name || 'No wallet selected'
+                  })()
+            }}
+          </span>
+          <span v-else class="text-grey">Loading wallet...</span>
         </div>
-        <div class="text-h6" :style="{ color: walletBalance >= 0 ? '#4d934e' : '#dc3545' }">
-          {{ netTotal.toLocaleString() }} PHP
+        <div class="text-h6" :style="{ color: walletBalance >= 0 ? '#dc3545' : '#10b981' }">
+          ₱ {{ netTotal.toLocaleString() }}
         </div>
       </div>
       <q-select
@@ -80,8 +90,8 @@
           <div class="text-h6" style="color: #dc3545">{{ expenseTotal.toLocaleString() }} PHP</div>
         </div>
         <div>
-          <div class="text-caption text-grey">Total</div>
-          <div class="text-h6" :style="{ color: netTotal >= 0 ? '#4d934e' : '#dc3545' }">
+          <div class="text-caption text-grey">Total Remaining</div>
+          <div class="text-h6" :style="{ color: netTotal >= 0 ? '#10b981' : '#dc3545' }">
             {{ netTotal.toLocaleString() }} PHP
           </div>
         </div>
@@ -134,16 +144,51 @@ const usersStore = useUsersStore()
 const categoriesStore = useCategoriesStore()
 
 // UI state
-const activeWallet = ref('all')
 const sharedMembers = ref([])
 
+// Connect to store's active wallet - use store's activeWalletId as the source of truth
+const activeWallet = computed({
+  get: () => activeWalletId.value,
+  set: (newWalletId) => {
+    if (newWalletId) {
+      financesStore.setActiveWallet(newWalletId)
+    }
+  },
+})
+
 // State from stores - use storeToRefs to maintain reactivity
-const { wallets: storeWallets } = storeToRefs(financesStore)
+const { wallets: storeWallets, activeWalletId } = storeToRefs(financesStore)
 const { currentUser } = storeToRefs(usersStore)
 const { categories } = storeToRefs(categoriesStore)
 
+// Force reactivity trigger when data becomes available
+const dataVersion = ref(0)
+
 // Access computed properties directly from store instance
 const totals = computed(() => financesStore.totals)
+
+// Data readiness check
+const isDataReady = computed(() => {
+  const ready =
+    !!storeWallets.value &&
+    Array.isArray(storeWallets.value) &&
+    storeWallets.value.length > 0 &&
+    !!activeWalletId.value
+
+  console.log('🔍 HomePage: isDataReady check:', {
+    storeWalletsExists: !!storeWallets.value,
+    storeWalletsIsArray: storeWallets.value && Array.isArray(storeWallets.value),
+    storeWalletsLength: storeWallets.value?.length || 0,
+    activeWalletIdExists: !!activeWalletId.value,
+    isReady: ready,
+    storeWalletsValue: storeWallets.value,
+    activeWalletIdValue: activeWalletId.value,
+    walletIds: storeWallets.value?.map((w) => w._id) || [],
+    activeWalletIdMatches: storeWallets.value?.some((w) => w._id === activeWalletId.value) || false,
+  })
+
+  return ready
+})
 
 // Date
 const currentMonth = computed(() =>
@@ -154,7 +199,80 @@ const currentMonth = computed(() =>
 const walletOptions = computed(() => {
   // Ensure storeWallets is an array before spreading
   const wallets = storeWallets.value && Array.isArray(storeWallets.value) ? storeWallets.value : []
-  return [{ name: 'All Wallets', _id: 'all' }, ...wallets]
+
+  console.log('🔍 HomePage: walletOptions computed:', {
+    walletsCount: wallets.length,
+    wallets: wallets.map((w) => ({ _id: w._id, name: w.name })),
+    storeWallets: storeWallets.value,
+    isArray: Array.isArray(storeWallets.value),
+  })
+
+  // Only show "All Wallets" if user has multiple wallets AND sharing is enabled
+  const hasMultipleWallets = wallets.length > 1
+  const isSharingEnabled = currentUser.value?.isSharingEnabled === true
+  const shouldShowAllWallets = hasMultipleWallets && isSharingEnabled
+
+  if (shouldShowAllWallets) {
+    return [{ name: 'All Wallets', _id: 'all' }, ...wallets]
+  } else {
+    return wallets
+  }
+})
+
+// Ensure we always have a valid active wallet
+const validActiveWallet = computed(() => {
+  const wallets = storeWallets.value && Array.isArray(storeWallets.value) ? storeWallets.value : []
+
+  console.log('🔍 HomePage: validActiveWallet computed:', {
+    activeWallet: activeWallet.value,
+    walletsCount: wallets.length,
+    wallets: wallets.map((w) => ({ _id: w._id, name: w.name })),
+  })
+
+  // If activeWallet is null or invalid, use first wallet
+  if (!activeWallet.value || activeWallet.value === 'all') {
+    if (wallets.length > 0) {
+      console.log('🔧 HomePage: Using first wallet:', wallets[0]._id, wallets[0].name)
+      return wallets[0]
+    }
+    console.log('❌ HomePage: No wallets available')
+    return null
+  }
+
+  // Check if the active wallet still exists
+  const walletExists = wallets.find((w) => w._id === activeWallet.value)
+  console.log('🔍 HomePage: ValidActiveWallet debug:', {
+    activeWalletValue: activeWallet.value,
+    walletsCount: wallets.length,
+    walletExists: !!walletExists,
+    walletExistsName: walletExists?.name,
+    walletIds: wallets.map((w) => w._id),
+  })
+  if (walletExists) {
+    console.log('✅ HomePage: Active wallet exists:', activeWallet.value, walletExists.name)
+    return walletExists
+  }
+
+  // If active wallet doesn't exist, fallback to first wallet
+  if (wallets.length > 0) {
+    console.log(
+      '🔄 HomePage: Active wallet not found, using first wallet:',
+      wallets[0]._id,
+      wallets[0].name,
+    )
+    return wallets[0]
+  }
+
+  console.log('❌ HomePage: No wallets available for fallback')
+  return null
+})
+
+// Force reactivity trigger when data becomes available
+watch([isDataReady, validActiveWallet], ([ready, wallet]) => {
+  if (ready && wallet) {
+    dataVersion.value++
+    console.log('🔄 HomePage: Forcing reactivity update:', dataVersion.value)
+  }
 })
 
 const walletBalance = computed(() => {
@@ -166,7 +284,7 @@ const walletBalance = computed(() => {
   if (activeWallet.value === 'all') {
     return storeWallets.value.reduce((total, wallet) => total + (wallet.balance || 0), 0)
   }
-  const wallet = storeWallets.value.find((w) => w._id === activeWallet.value)
+  const wallet = typeof validActiveWallet.value === 'object' ? validActiveWallet : null
   return wallet ? wallet.balance : 0
 })
 
@@ -230,40 +348,51 @@ onMounted(async () => {
     }
   }
 
+  console.log('🚀 HomePage: Starting data load...')
+
   // Load all financial data concurrently
   await Promise.all([financesStore.loadAll(), categoriesStore.loadCategories()])
 
-  // Set default to 'all' wallets
-  if (!activeWallet.value) {
-    activeWallet.value = 'all'
-  }
+  console.log('✅ HomePage: Data load completed', {
+    walletsCount: storeWallets.value?.length || 0,
+    activeWalletId: activeWalletId.value,
+  })
 })
 
-// Watch for active wallet changes
-watch(activeWallet, (newWallet) => {
-  if (newWallet && newWallet !== 'all') {
-    // Ensure storeWallets is an array before calling find
-    const wallet =
-      storeWallets.value && Array.isArray(storeWallets.value)
-        ? storeWallets.value.find((w) => w._id === newWallet)
-        : null
-    if (wallet?.sharedWithUserIds) {
-      sharedMembers.value = wallet.sharedWithUserIds
+// Watch for wallet changes to update shared members when active wallet changes
+watch(
+  activeWallet,
+  (newWallet) => {
+    if (newWallet && newWallet !== 'all') {
+      // Ensure storeWallets is an array before calling find
+      const wallet =
+        storeWallets.value && Array.isArray(storeWallets.value)
+          ? storeWallets.value.find((w) => w._id === newWallet)
+          : null
+      if (wallet?.sharedWithUserIds) {
+        sharedMembers.value = wallet.sharedWithUserIds
+      } else {
+        sharedMembers.value = []
+      }
     } else {
       sharedMembers.value = []
     }
-  } else {
-    sharedMembers.value = []
-  }
-})
+  },
+  { immediate: true },
+)
 
-// Watch for wallet changes to update active wallet
+// Force template update when data becomes ready
 watch(
-  storeWallets,
-  (newWallets) => {
-    if (newWallets.length > 0 && !activeWallet.value) {
-      activeWallet.value = 'all'
-    }
+  [isDataReady, validActiveWallet],
+  ([dataReady, walletId]) => {
+    console.log('🔄 HomePage: Data readiness changed:', {
+      dataReady,
+      walletId:
+        (typeof walletId === 'string'
+          ? walletId?.substring(0, 10)
+          : walletId?._id?.substring(0, 10)) + '...',
+      shouldShowWallet: dataReady && !!walletId,
+    })
   },
   { immediate: true },
 )
