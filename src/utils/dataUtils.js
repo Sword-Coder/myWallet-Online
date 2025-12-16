@@ -27,7 +27,7 @@ export function createUserDocument(userData) {
     // Sharing configuration
     sharedWithUserIds: [],
     sharedWalletIds: [],
-    isSharingEnabled: true,
+    isSharingEnabled: false,
     sharingStatus: 'single',
 
     // Timestamps
