@@ -68,7 +68,7 @@
           </div>
           <div>
             <div class="text-caption text-grey">Total</div>
-            <div class="text-h6" :style="{ color: netTotal >= 0 ? '#4d934e' : '#dc3545' }">
+            <div class="text-h6" :style="{ color: netTotal >= 0 ? '#10b981' : '#dc3545' }">
               ₱{{ netTotal.toLocaleString() }}
             </div>
           </div>
@@ -276,7 +276,7 @@ const { categories } = storeToRefs(categoriesStore)
 const { currentUser } = storeToRefs(usersStore)
 
 // Local state
-const selectedWallet = ref('all')
+const selectedWallet = ref(null)
 const activeCategory = ref('All')
 const dateRange = ref('')
 const isLoading = ref(false)
@@ -290,10 +290,18 @@ const currentMonth = computed(() =>
   new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
 )
 
-const walletOptions = computed(() => [
-  { name: 'All Wallets', _id: 'all' },
-  ...(wallets.value || []),
-])
+const walletOptions = computed(() => {
+  // Only show "All Wallets" if user has multiple wallets AND sharing is enabled
+  const hasMultipleWallets = (wallets.value || []).length > 1
+  const isSharingEnabled = currentUser.value?.isSharingEnabled === true
+  const shouldShowAllWallets = hasMultipleWallets && isSharingEnabled
+
+  if (shouldShowAllWallets) {
+    return [{ name: 'All Wallets', _id: 'all' }, ...(wallets.value || [])]
+  } else {
+    return wallets.value || []
+  }
+})
 
 const categoryOptions = computed(() => {
   const categoryList = [
@@ -349,7 +357,8 @@ const filteredTransactions = computed(() => {
   })
 
   return (userTransactions.value || []).filter((t) => {
-    const matchWallet = selectedWallet.value === 'all' || t.walletId === selectedWallet.value
+    const matchWallet =
+      !selectedWallet.value || selectedWallet.value === 'all' || t.walletId === selectedWallet.value
     const matchCategory = activeCategory.value === 'All' || t.categoryId === activeCategory.value
     const matchDate =
       !dateRange.value ||
@@ -528,7 +537,14 @@ async function refreshData() {
     // Ensure default wallet is set after loading
     await nextTick()
     if (!selectedWallet.value) {
-      selectedWallet.value = 'all'
+      const hasMultipleWallets = wallets.value.length > 1
+      const isSharingEnabled = currentUser.value?.isSharingEnabled === true
+
+      if (hasMultipleWallets && isSharingEnabled) {
+        selectedWallet.value = 'all'
+      } else if (wallets.value.length > 0) {
+        selectedWallet.value = wallets.value[0]._id
+      }
     }
   } catch (err) {
     console.error('Analysis: Refresh failed:', err)
@@ -539,7 +555,15 @@ async function refreshData() {
 
 // Filter management
 function clearFilters() {
-  selectedWallet.value = 'all'
+  const hasMultipleWallets = wallets.value.length > 1
+  const isSharingEnabled = currentUser.value?.isSharingEnabled === true
+
+  if (hasMultipleWallets && isSharingEnabled) {
+    selectedWallet.value = 'all'
+  } else if (wallets.value.length > 0) {
+    selectedWallet.value = wallets.value[0]._id
+  }
+
   activeCategory.value = 'All'
   dateRange.value = ''
 }
