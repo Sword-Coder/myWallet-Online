@@ -56,19 +56,42 @@
     <!-- Main Content -->
     <div v-else>
       <!-- Monthly Summary -->
-      <q-card flat bordered class="q-pa-md q-mb-md">
-        <div class="row justify-around text-center">
-          <div>
-            <div class="text-caption text-grey">Income</div>
-            <div class="text-h6" style="color: #4d934e">₱{{ incomeTotal.toLocaleString() }}</div>
+      <q-card flat bordered class="monthly-summary-card q-pa-lg q-mb-lg">
+        <div class="text-subtitle1 text-weight-medium text-center q-mb-md">
+          Monthly Financial Overview
+        </div>
+        <div class="row justify-between items-center">
+          <!-- Income -->
+          <div class="summary-stat-item text-center">
+            <q-icon name="trending_up" size="32px" color="positive" class="q-mb-sm" />
+            <div class="text-caption text-grey text-weight-medium">Income</div>
+            <div class="text-h5 text-weight-bold text-positive">
+              ₱{{ incomeTotal.toLocaleString() }}
+            </div>
           </div>
-          <div>
-            <div class="text-caption text-grey">Expense</div>
-            <div class="text-h6" style="color: #dc3545">₱{{ expenseTotal.toLocaleString() }}</div>
+
+          <!-- Expense -->
+          <div class="summary-stat-item text-center">
+            <q-icon name="trending_down" size="32px" color="negative" class="q-mb-sm" />
+            <div class="text-caption text-grey text-weight-medium">Expense</div>
+            <div class="text-h5 text-weight-bold text-negative">
+              ₱{{ expenseTotal.toLocaleString() }}
+            </div>
           </div>
-          <div>
-            <div class="text-caption text-grey">Total</div>
-            <div class="text-h6" :style="{ color: netTotal >= 0 ? '#10b981' : '#dc3545' }">
+
+          <!-- Net Total -->
+          <div class="summary-stat-item text-center">
+            <q-icon
+              :name="netTotal >= 0 ? 'account_balance_wallet' : 'warning'"
+              size="32px"
+              :color="netTotal >= 0 ? 'positive' : 'negative'"
+              class="q-mb-sm"
+            />
+            <div class="text-caption text-grey text-weight-medium">Net Total</div>
+            <div
+              class="text-h5 text-weight-bold"
+              :class="netTotal >= 0 ? 'text-positive' : 'text-negative'"
+            >
               ₱{{ netTotal.toLocaleString() }}
             </div>
           </div>
@@ -241,12 +264,21 @@
       </div>
 
       <!-- Summary Statistics -->
-      <q-card flat bordered class="q-pa-md q-mt-lg">
-        <div class="text-subtitle1 text-weight-medium q-mb-md">Summary Statistics</div>
-        <div class="grid sm:grid-cols-3 gap-4">
-          <div v-for="stat in summaryStats" :key="stat.label" class="text-center">
-            <div class="text-h6 text-weight-bold">{{ stat.value }}</div>
-            <div class="text-caption text-grey">{{ stat.label }}</div>
+      <q-card flat bordered class="summary-stats-card q-pa-lg q-mt-lg">
+        <div class="text-subtitle1 text-weight-medium q-mb-lg text-center">Financial Summary</div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div
+            v-for="(stat, index) in summaryStats"
+            :key="stat.label"
+            class="stat-card text-center q-pa-md"
+          >
+            <div class="stat-icon q-mb-sm">
+              <q-icon :name="getStatIcon(index)" :color="getStatColor(index)" size="24px" />
+            </div>
+            <div class="text-body1 text-weight-bold" :class="`text-${getStatColor(index)}`">
+              {{ stat.value }}
+            </div>
+            <div class="text-caption text-grey q-mt-xs">{{ stat.label }}</div>
           </div>
         </div>
       </q-card>
@@ -447,6 +479,28 @@ function getBudgetProgress(budget) {
 
 function isBudgetExceeded(budget) {
   return (budget.spent || 0) > budget.amount && budget.amount > 0
+}
+
+function getStatIcon(index) {
+  const icons = [
+    'account_balance_wallet', // Total Budget
+    'shopping_cart', // Total Spent
+    'list_alt', // Active Budgets
+    'savings', // Remaining
+    'analytics', // Budget Usage
+  ]
+  return icons[index] || 'info'
+}
+
+function getStatColor(index) {
+  const colors = [
+    'primary', // Total Budget
+    'negative', // Total Spent
+    'warning', // Active Budgets
+    'positive', // Remaining
+    'info', // Budget Usage
+  ]
+  return colors[index] || 'grey'
 }
 
 // Budget filtering
@@ -748,5 +802,155 @@ watch([selectedWallet, activeCategory, dateRange], ([wallet, category, range]) =
 
 .budget-list::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(135deg, #3d7e3f 0%, #5a8a5f 100%);
+}
+
+/* Enhanced Summary Cards */
+.monthly-summary-card {
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+  border: 2px solid #e9ecef;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.summary-stat-item {
+  flex: 1;
+  padding: 16px;
+  min-width: 120px;
+  transition: transform 0.2s ease;
+}
+
+.summary-stat-item:hover {
+  transform: translateY(-2px);
+}
+
+.summary-stats-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  border: 2px solid #e9ecef;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.stat-card {
+  background: #ffffff;
+  border: 1px solid #e9ecef;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--q-primary);
+}
+
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+  border-color: #dee2e6;
+}
+
+.stat-card:nth-child(1)::before {
+  background: var(--q-primary);
+}
+.stat-card:nth-child(2)::before {
+  background: var(--q-negative);
+}
+.stat-card:nth-child(3)::before {
+  background: var(--q-warning);
+}
+.stat-card:nth-child(4)::before {
+  background: var(--q-positive);
+}
+.stat-card:nth-child(5)::before {
+  background: var(--q-info);
+}
+
+.stat-icon {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto;
+  border-radius: 50%;
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+/* Grid layouts */
+.grid {
+  display: grid;
+  gap: 16px;
+}
+
+.grid-cols-1 {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .sm\:grid-cols-2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .sm\:grid-cols-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .lg\:grid-cols-5 {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .monthly-summary-card .row {
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .summary-stat-item {
+    padding: 12px;
+    border-bottom: 1px solid #e9ecef;
+  }
+
+  .summary-stat-item:last-child {
+    border-bottom: none;
+  }
+
+  .summary-stats-card .grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .stat-card {
+    padding: 16px 12px;
+  }
+
+  .stat-icon {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+@media (max-width: 480px) {
+  .summary-stats-card .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-card {
+    padding: 12px 8px;
+  }
+
+  .stat-icon {
+    width: 36px;
+    height: 36px;
+  }
 }
 </style>
