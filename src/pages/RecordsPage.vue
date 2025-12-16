@@ -373,7 +373,7 @@ const form = ref({
 })
 
 // UI state
-const activeWallet = ref('all')
+const activeWallet = ref(null)
 
 // Expected tithes state
 const expectedTithes = ref(0)
@@ -383,10 +383,18 @@ const currentMonth = computed(() =>
   new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
 )
 
-const walletOptions = computed(() => [
-  { name: 'All Wallets', _id: 'all' },
-  ...(wallets.value || []),
-])
+const walletOptions = computed(() => {
+  // Only show "All Wallets" if user has multiple wallets AND sharing is enabled
+  const hasMultipleWallets = (wallets.value || []).length > 1
+  const isSharingEnabled = currentUser.value?.isSharingEnabled === true
+  const shouldShowAllWallets = hasMultipleWallets && isSharingEnabled
+
+  if (shouldShowAllWallets) {
+    return [{ name: 'All Wallets', _id: 'all' }, ...(wallets.value || [])]
+  } else {
+    return wallets.value || []
+  }
+})
 
 const categoryOptions = computed(() => categories.value || [])
 
@@ -638,6 +646,18 @@ onMounted(async () => {
   // Set default wallet
   if (wallets.value.length > 0) {
     form.value.walletId = wallets.value[0]._id
+
+    // Also ensure activeWallet is set properly for single users
+    if (!activeWallet.value || activeWallet.value === 'all') {
+      const hasMultipleWallets = wallets.value.length > 1
+      const isSharingEnabled = currentUser.value?.isSharingEnabled === true
+
+      if (hasMultipleWallets && isSharingEnabled) {
+        activeWallet.value = 'all'
+      } else {
+        activeWallet.value = wallets.value[0]._id
+      }
+    }
   }
 
   // Handle transaction navigation from HomePage
@@ -842,7 +862,7 @@ onMounted(async () => {
 }
 
 .net-text {
-  color: #4d934e !important;
+  color: #10b981 !important;
 }
 
 /* Mobile responsive design */
