@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wallet Defensive Programming Fix</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      .card {
+        background: white;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .error {
+        color: #dc3545;
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        padding: 10px;
+        border-radius: 4px;
+        margin: 10px 0;
+      }
+      .success {
+        color: #4d934e;
+        font-weight: bold;
+      }
+      .fix {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        padding: 15px;
+        border-radius: 4px;
+        margin: 10px 0;
+      }
+      code {
+        background-color: #f4f4f4;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-family: monospace;
+        color: #d63384;
+      }
+      .debug {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        padding: 15px;
+        margin: 10px 0;
+        border-radius: 4px;
+        font-family: monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>🔧 Defensive Programming Fix Applied</h1>
+
+      <div class="error">
+        <strong>❌ Issues Fixed:</strong>
+        <ul>
+          <li><code>TypeError: Cannot read properties of null (reading 'value')</code></li>
+          <li>Template accessing null values without null checks</li>
+        </ul>
+      </div>
+
+      <div class="fix">
+        <strong>✅ Defensive Solutions Applied:</strong>
+      </div>
+
+      <h3>1. Safe Template Key:</h3>
+      <div class="debug">
+        <strong>BEFORE (❌ Unsafe):</strong><br />
+        <code>:key="`wallet-${isDataReady}-${!!validActiveWallet.value}`"</code>
+        <br /><br />
+        <strong>AFTER (✅ Safe):</strong><br />
+        <code>:key="`wallet-${isDataReady}-${validActiveWallet ? 'has' : 'none'}`"</code>
+      </div>
+
+      <h3>2. Null-Safe Template Condition:</h3>
+      <div class="debug">
+        <strong>BEFORE (❌ Could throw error):</strong><br />
+        <code>v-if="isDataReady && validActiveWallet.value"</code>
+        <br /><br />
+        <strong>AFTER (✅ Null-safe):</strong><br />
+        <code>v-if="isDataReady && validActiveWallet && validActiveWallet.value"</code>
+      </div>
+
+      <h3>3. Enhanced Data Loading Debug:</h3>
+      <div class="debug">
+        <code
+          >console.log('🚀 HomePage: Starting data load...')<br />
+          console.log('✅ HomePage: Data load completed', {<br />
+          &nbsp;&nbsp;walletsCount: storeWallets.value?.length || 0,<br />
+          &nbsp;&nbsp;activeWalletId: activeWalletId.value<br />
+          })</code
+        >
+      </div>
+
+      <h2>🎯 Benefits of Defensive Programming:</h2>
+      <ul>
+        <li><strong>No Runtime Errors:</strong> Null checks prevent TypeError exceptions</li>
+        <li><strong>Graceful Degradation:</strong> App handles edge cases without crashing</li>
+        <li><strong>Better Debugging:</strong> Clear visibility into data loading process</li>
+        <li><strong>Robust UI:</strong> Template responds properly to all data states</li>
+      </ul>
+
+      <div class="success">
+        <h3>🎉 Expected Result:</h3>
+        <p>After reloading, you should see:</p>
+        <ul>
+          <li><strong>No more TypeError messages</strong></li>
+          <li>
+            <strong>Console shows data loading process:</strong>
+            <code>🚀 HomePage: Starting data load...</code>
+          </li>
+          <li><strong>Proper wallet display:</strong> "Main Wallet" when data is ready</li>
+          <li><strong>Graceful loading state:</strong> "Loading wallet..." while data loads</li>
+        </ul>
+      </div>
+
+      <div class="debug">
+        <strong>💡 Key Principle:</strong> Always check if an object exists before accessing its
+        properties. This prevents runtime errors and ensures your application remains stable even
+        when data is temporarily unavailable.
+      </div>
+    </div>
+  </body>
+</html>

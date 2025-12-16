@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wallet Template Debug</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      .card {
+        background: white;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .debug {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        padding: 15px;
+        margin: 10px 0;
+        border-radius: 4px;
+        font-family: monospace;
+        white-space: pre-wrap;
+      }
+      .step {
+        background-color: #e3f2fd;
+        border-left: 4px solid #2196f3;
+        padding: 10px;
+        margin: 10px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>🔍 Wallet Template Debug</h1>
+
+      <div class="step"><strong>Step 1:</strong> Reload your browser page</div>
+
+      <div class="step">
+        <strong>Step 2:</strong> Check the browser console for detailed debug logs
+      </div>
+
+      <div class="debug">
+        Expected debug output format: 🔍 HomePage: Template render - checking conditions: {
+        activeWallet: "wallet_user_1765635944128_7m29wsurq", activeWalletId:
+        "wallet_user_1765635944128_7m29wsurq", storeWalletsExists: true, storeWalletsIsArray: true,
+        storeWalletsLength: 1, validActiveWallet: "wallet_user_1765635944128_7m29wsurq",
+        validActiveWalletExists: true } 🔍 HomePage: Display logic - finding wallet: {
+        validActiveWallet: "wallet_user_1765635944128_7m29wsurq", activeWalletId:
+        "wallet_user_1765635944128_7m29wsurq", walletFound: { _id:
+        "wallet_user_1765635944128_7m29wsurq", name: "Main Wallet", ... }, walletName: "Main
+        Wallet", allWallets: [ { _id: "wallet_user_1765635944128_7m29wsurq", name: "Main Wallet" } ]
+        } ✅ HomePage: Final wallet display: Main Wallet
+      </div>
+
+      <div class="step">
+        <strong>Step 3:</strong> Look for the specific issue based on the debug output:
+      </div>
+
+      <ul>
+        <li><strong>If you see "storeWallets not ready":</strong> Data loading timing issue</li>
+        <li><strong>If you see "NOT FOUND":</strong> Wallet lookup logic problem</li>
+        <li><strong>If no template debug logs appear:</strong> Template rendering issue</li>
+        <li><strong>If you see "Main Wallet":</strong> Fix is working!</li>
+      </ul>
+
+      <div class="debug">
+        Common issues and solutions: 1. "storeWallets not ready" → Wait for data to load or add
+        loading state 2. "NOT FOUND" → Check wallet ID matching logic 3. No template debug logs →
+        Check if template is conditional rendering 4. All conditions pass but still "No wallet
+        selected" → Check for CSS/styling issues hiding the content
+      </div>
+    </div>
+  </body>
+</html>
