@@ -19,7 +19,15 @@
 
     <!-- Accounts List -->
     <transition-group name="fade-slide-up" tag="div">
-      <q-card v-for="wallet in wallets" :key="wallet._id" flat bordered class="q-mb-sm">
+      <q-card
+        v-for="wallet in wallets"
+        :key="wallet._id"
+        flat
+        bordered
+        class="q-mb-sm wallet-card clickable-card"
+        :class="{ 'wallet-card-hover': wallet._id !== currentUser?.walletId }"
+        @click="editWallet(wallet)"
+      >
         <q-card-section>
           <div class="row items-center justify-between">
             <div class="row items-center">
@@ -48,7 +56,7 @@
         </q-card-section>
 
         <!-- Account Actions -->
-        <q-card-actions v-if="wallet._id !== currentUser?.walletId" align="right">
+        <q-card-actions v-if="wallet._id !== currentUser?.walletId" align="right" @click.stop>
           <q-btn flat dense color="grey" icon="edit" label="Edit" @click="editWallet(wallet)" />
           <q-btn
             flat
@@ -392,6 +400,17 @@ onMounted(async () => {
 .q-card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   transform: translateY(-1px);
+}
+
+/* Clickable Cards */
+.clickable-card {
+  cursor: pointer;
+}
+
+.wallet-card-hover:hover {
+  box-shadow: 0 6px 20px rgba(77, 147, 78, 0.15);
+  transform: translateY(-2px);
+  border-color: #4d934e;
 }
 
 /* Responsive Design */
