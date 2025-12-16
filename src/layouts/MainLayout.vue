@@ -122,6 +122,7 @@ const financesStore = useFinancesStore()
 
 // Get reactive data from stores
 const { transactions } = storeToRefs(financesStore)
+const { categories } = storeToRefs(categoriesStore)
 // Note: authStore has 'user' (singular), not 'users' (plural)
 
 const menuLinks = [
@@ -251,7 +252,7 @@ async function handlePDFExport() {
     const savedWallets = JSON.parse(localStorage.getItem('wallets') || '[]')
     const currentUser = authStore.user || {}
 
-    const result = generatePDF(transactions.value, savedWallets, {
+    const result = generatePDF(transactions.value, savedWallets, categories.value, {
       name: currentUser.name,
       email: currentUser.email,
     })
@@ -297,8 +298,8 @@ async function handleBothExports() {
     const currentUser = authStore.user || {}
 
     // Export both formats
-    const csvResult = exportTransactions(transactions.value, savedWallets)
-    const pdfResult = generatePDF(transactions.value, savedWallets, {
+    const csvResult = exportTransactions(transactions.value, savedWallets, categories.value)
+    const pdfResult = generatePDF(transactions.value, savedWallets, categories.value, {
       name: currentUser.name,
       email: currentUser.email,
     })
