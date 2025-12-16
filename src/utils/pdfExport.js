@@ -3,44 +3,106 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
 /**
+ * Get category name from categoryId
+ * @param {string} categoryId
+ * @param {Array} categories
+ * @returns {string} category name
+ */
+export function getCategoryNameForPDF(categoryId, categories) {
+  if (!categoryId) return 'Uncategorized'
+
+  const category = (categories || []).find((c) => c._id === categoryId)
+  return category ? category.name : 'Unknown Category'
+}
+
+/**
  * Format date for PDF display
  * @param {string} dateStr - YYYY-MM-DD format
  * @param {string} timeStr - HH:MM format
  * @returns {string} formatted date for PDF
  */
 export function formatDateForPDF(dateStr, timeStr) {
-  const [year, month, day] = dateStr.split('-').map(Number)
-  const [hours, minutes] = timeStr.split(':').map(Number)
+  // Handle missing or invalid date/time data
+  if (!dateStr || !timeStr) {
+    return 'N/A'
+  }
 
-  const date = new Date(year, month - 1, day, hours, minutes)
+  try {
+    // Handle different date formats and validate input
+    let dateParts, timeParts
 
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ]
+    // Handle YYYY-MM-DD format
+    if (dateStr.includes('-')) {
+      dateParts = dateStr.split('-').map(Number)
+    } else if (dateStr.includes('/')) {
+      dateParts = dateStr.split('/').map(Number)
+    } else {
+      // Try to parse as ISO date
+      const parsedDate = new Date(dateStr)
+      if (isNaN(parsedDate.getTime())) {
+        return 'Invalid Date'
+      }
+      return parsedDate.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      })
+    }
 
-  const monthName = months[date.getMonth()]
-  const dayNum = date.getDate()
-  const yearNum = date.getFullYear()
+    // Handle HH:MM format
+    if (timeStr.includes(':')) {
+      timeParts = timeStr.split(':').map(Number)
+    } else {
+      timeParts = [0, 0] // Default to midnight if time is invalid
+    }
 
-  let hours12 = date.getHours()
-  const minutesStr = date.getMinutes().toString().padStart(2, '0')
-  const ampm = hours12 >= 12 ? 'PM' : 'AM'
+    // Validate date parts
+    if (dateParts.length < 3 || dateParts.some(isNaN)) {
+      return 'Invalid Date'
+    }
 
-  hours12 = hours12 % 12
-  hours12 = hours12 ? hours12 : 12
+    const [year, month, day] = dateParts
+    const [hours, minutes] = timeParts.length >= 2 ? timeParts : [0, 0]
 
-  return `${monthName} ${dayNum}, ${yearNum} ${hours12}:${minutesStr} ${ampm}`
+    // Create date object
+    const date = new Date(year, (month || 1) - 1, day || 1, hours || 0, minutes || 0)
+
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return 'Invalid Date'
+    }
+
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ]
+
+    const monthName = months[date.getMonth()] || 'Jan'
+    const dayNum = date.getDate() || 1
+    const yearNum = date.getFullYear()
+
+    let hours12 = date.getHours()
+    const minutesStr = date.getMinutes().toString().padStart(2, '0')
+    const ampm = hours12 >= 12 ? 'PM' : 'AM'
+
+    hours12 = hours12 % 12
+    hours12 = hours12 ? hours12 : 12
+
+    return `${monthName} ${dayNum}, ${yearNum} ${hours12}:${minutesStr} ${ampm}`
+  } catch (error) {
+    console.warn('Error formatting date for PDF:', { dateStr, timeStr, error })
+    return 'Invalid Date'
+  }
 }
 
 /**
@@ -118,10 +180,11 @@ export function generatePDFFilename() {
  * Create beautifully formatted PDF report
  * @param {Array} transactions
  * @param {Array} wallets
+ * @param {Array} categories - optional categories list
  * @param {Object} userInfo - optional user info {name, email}
  * @returns {Object} { success: boolean, filename?: string, error?: string }
  */
-export function exportToPDF(transactions, wallets, userInfo = {}) {
+export function exportToPDF(transactions, wallets, categories = [], userInfo = {}) {
   try {
     const doc = new jsPDF('p', 'mm', 'a4') // Portrait, millimeters, A4
     const pageWidth = doc.internal.pageSize.getWidth()
@@ -203,7 +266,7 @@ export function exportToPDF(transactions, wallets, userInfo = {}) {
         1: { cellWidth: 35, halign: 'right' }, // Amount column - right aligned
       },
       margin: { left: 15, right: 15 },
-      tableWidth: 75, // Ensure table fits
+      tableWidth: 85, // Ensure table fits
     })
 
     currentY = doc.lastAutoTable.finalY + 10
@@ -217,10 +280,52 @@ export function exportToPDF(transactions, wallets, userInfo = {}) {
 
     // Prepare table data with proper formatting
     const tableData = transactions.map((transaction) => {
-      const dateTime = formatDateForPDF(transaction.date, transaction.time)
+      // Use datetime field if available, otherwise fall back to date/time fields
+      let dateTime
+      if (transaction.datetime) {
+        // Parse ISO datetime format
+        const date = new Date(transaction.datetime)
+        if (!isNaN(date.getTime())) {
+          const months = [
+            'Jan',
+            'Feb',
+            'Mar',
+            'Apr',
+            'May',
+            'Jun',
+            'Jul',
+            'Aug',
+            'Sep',
+            'Oct',
+            'Nov',
+            'Dec',
+          ]
+          const monthName = months[date.getMonth()]
+          const dayNum = date.getDate()
+          const yearNum = date.getFullYear()
+
+          let hours12 = date.getHours()
+          const minutesStr = date.getMinutes().toString().padStart(2, '0')
+          const ampm = hours12 >= 12 ? 'PM' : 'AM'
+
+          hours12 = hours12 % 12
+          hours12 = hours12 ? hours12 : 12
+
+          dateTime = `${monthName} ${dayNum}, ${yearNum} ${hours12}:${minutesStr} ${ampm}`
+        } else {
+          dateTime = 'Invalid Date'
+        }
+      } else {
+        // Fallback to separate date/time fields
+        dateTime = formatDateForPDF(transaction.date, transaction.time)
+      }
+
       const type = formatTypeForPDF(transaction.kind).text
       const amount = formatAmountForPDF(transaction.amount)
-      const category = truncateTextForPDF(transaction.category || 'N/A', 15)
+      const category = truncateTextForPDF(
+        getCategoryNameForPDF(transaction.categoryId, categories),
+        15,
+      )
       const account = truncateTextForPDF(getAccountNameForPDF(transaction.walletId, wallets), 10)
       const notes = truncateTextForPDF(transaction.notes || '', 25) // Truncate notes to fit
 
@@ -244,11 +349,11 @@ export function exportToPDF(transactions, wallets, userInfo = {}) {
         cellPadding: 1,
       },
       columnStyles: {
-        0: { cellWidth: 35 }, // Date & Time
-        1: { cellWidth: 20 }, // Type
-        2: { cellWidth: 25 }, // Amount
-        3: { cellWidth: 25 }, // Category
-        4: { cellWidth: 20 }, // Account
+        0: { cellWidth: 40 }, // Date & Time
+        1: { cellWidth: 22 }, // Type
+        2: { cellWidth: 28 }, // Amount
+        3: { cellWidth: 30 }, // Category
+        4: { cellWidth: 25 }, // Account
         5: { cellWidth: 35 }, // Notes
       },
       styles: {
@@ -257,7 +362,7 @@ export function exportToPDF(transactions, wallets, userInfo = {}) {
         minCellHeight: 6, // Ensure minimum cell height
       },
       margin: { left: 15, right: 15 },
-      tableWidth: 160, // Ensure table fits within page
+      tableWidth: 180, // Use full available page width
       didDrawCell: function (data) {
         // Color code transaction types
         if (data.column.index === 1 && data.section === 'body') {
