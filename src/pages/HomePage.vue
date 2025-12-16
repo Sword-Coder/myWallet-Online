@@ -1,7 +1,7 @@
 <template>
   <q-page class="q-pa-md bg-grey-2">
     <!-- Header -->
-    <div class="text-h5 text-weight-bold q-mb-md">Welcome Back 👋</div>
+    <div class="text-h5 text-weight-bold q-mb-md">{{ welcomeMessage }}</div>
     <div class="text-subtitle2 text-grey q-mb-lg">{{ currentMonth }}</div>
 
     <!-- 🆕 Shared Wallet Alert -->
@@ -299,6 +299,16 @@ const recentTransactions = computed(() => {
     console.warn('Error getting recent transactions:', error)
     return []
   }
+})
+
+// Check if user is new (no transactions yet)
+const isNewUser = computed(() => {
+  return financesStore.transactions.length === 0
+})
+
+// Dynamic welcome message based on user status
+const welcomeMessage = computed(() => {
+  return isNewUser.value ? 'Welcome! 👋' : 'Welcome Back! 👋'
 })
 
 // Helper functions
