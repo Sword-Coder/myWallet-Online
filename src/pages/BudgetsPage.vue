@@ -253,7 +253,7 @@ const currentMonth = computed(() =>
 )
 
 const walletOptions = computed(() =>
-  (wallets.value || []).map((w) => ({ label: w.name, _id: w._id })),
+  (wallets.value || []).map((w) => ({ label: w.name, value: w._id })),
 )
 
 // 🔧 FIXED: Simplified filteredBudgets computed (like Analysis page)
