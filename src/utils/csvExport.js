@@ -1,45 +1,108 @@
 // src/utils/csvExport.js
 
 /**
+ * Get category name from categoryId
+ * @param {string} categoryId
+ * @param {Array} categories
+ * @returns {string} category name
+ */
+export function getCategoryNameForCSV(categoryId, categories) {
+  if (!categoryId) return 'Uncategorized'
+
+  const category = (categories || []).find((c) => c._id === categoryId)
+  return category ? category.name : 'Unknown Category'
+}
+
+/**
  * Format date to match the desired CSV format
  * @param {string} dateStr - YYYY-MM-DD format
  * @param {string} timeStr - HH:MM format
  * @returns {string} formatted date like "Oct 13, 2025 5:30 PM"
  */
 export function formatDateForCSV(dateStr, timeStr) {
-  // Parse the date and time
-  const [year, month, day] = dateStr.split('-').map(Number)
-  const [hours, minutes] = timeStr.split(':').map(Number)
+  // Handle missing or invalid date/time data
+  if (!dateStr || !timeStr) {
+    return 'N/A'
+  }
 
-  const date = new Date(year, month - 1, day, hours, minutes) // month is 0-indexed
+  try {
+    // Handle different date formats and validate input
+    let dateParts, timeParts
 
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ]
+    // Handle YYYY-MM-DD format
+    if (dateStr.includes('-')) {
+      dateParts = dateStr.split('-').map(Number)
+    } else if (dateStr.includes('/')) {
+      dateParts = dateStr.split('/').map(Number)
+    } else {
+      // Try to parse as ISO date
+      const parsedDate = new Date(dateStr)
+      if (isNaN(parsedDate.getTime())) {
+        return 'Invalid Date'
+      }
+      return parsedDate.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    }
 
-  const monthName = months[date.getMonth()]
-  const dayNum = date.getDate()
-  const yearNum = date.getFullYear()
+    // Handle HH:MM format
+    if (timeStr.includes(':')) {
+      timeParts = timeStr.split(':').map(Number)
+    } else {
+      timeParts = [0, 0] // Default to midnight if time is invalid
+    }
 
-  let hours12 = date.getHours()
-  const minutesStr = date.getMinutes().toString().padStart(2, '0')
-  const ampm = hours12 >= 12 ? 'PM' : 'AM'
+    // Validate date parts
+    if (dateParts.length < 3 || dateParts.some(isNaN)) {
+      return 'Invalid Date'
+    }
 
-  hours12 = hours12 % 12
-  hours12 = hours12 ? hours12 : 12 // 0 should be 12
+    const [year, month, day] = dateParts
+    const [hours, minutes] = timeParts.length >= 2 ? timeParts : [0, 0]
 
-  return `${monthName} ${dayNum}, ${yearNum} ${hours12}:${minutesStr} ${ampm}`
+    // Create date object
+    const date = new Date(year, (month || 1) - 1, day || 1, hours || 0, minutes || 0)
+
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return 'Invalid Date'
+    }
+
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ]
+
+    const monthName = months[date.getMonth()] || 'Jan'
+    const dayNum = date.getDate() || 1
+    const yearNum = date.getFullYear()
+
+    let hours12 = date.getHours()
+    const minutesStr = date.getMinutes().toString().padStart(2, '0')
+    const ampm = hours12 >= 12 ? 'PM' : 'AM'
+
+    hours12 = hours12 % 12
+    hours12 = hours12 ? hours12 : 12 // 0 should be 12
+
+    return `${monthName} ${dayNum}, ${yearNum} ${hours12}:${minutesStr} ${ampm}`
+  } catch (error) {
+    console.warn('Error formatting date for CSV:', { dateStr, timeStr, error })
+    return 'Invalid Date'
+  }
 }
 
 /**
@@ -98,19 +161,58 @@ export function generateCSVFilename() {
  * Convert transactions to CSV format
  * @param {Array} transactions
  * @param {Array} wallets
+ * @param {Array} categories - optional categories list
  * @returns {string} CSV content
  */
-export function convertToCSV(transactions, wallets) {
+export function convertToCSV(transactions, wallets, categories = []) {
   const headers = ['TIME', 'TYPE', 'AMOUNT', 'CATEGORY', 'ACCOUNT', 'NOTES']
 
   const csvRows = [headers.join(',')]
 
   transactions.forEach((transaction) => {
     // Handle the date/time format correctly
-    const time = formatDateForCSV(transaction.date, transaction.time)
+    let time
+    if (transaction.datetime) {
+      // Parse ISO datetime format
+      const date = new Date(transaction.datetime)
+      if (!isNaN(date.getTime())) {
+        const months = [
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'May',
+          'Jun',
+          'Jul',
+          'Aug',
+          'Sep',
+          'Oct',
+          'Nov',
+          'Dec',
+        ]
+        const monthName = months[date.getMonth()]
+        const dayNum = date.getDate()
+        const yearNum = date.getFullYear()
+
+        let hours12 = date.getHours()
+        const minutesStr = date.getMinutes().toString().padStart(2, '0')
+        const ampm = hours12 >= 12 ? 'PM' : 'AM'
+
+        hours12 = hours12 % 12
+        hours12 = hours12 ? hours12 : 12
+
+        time = `${monthName} ${dayNum}, ${yearNum} ${hours12}:${minutesStr} ${ampm}`
+      } else {
+        time = 'Invalid Date'
+      }
+    } else {
+      // Fallback to separate date/time fields
+      time = formatDateForCSV(transaction.date, transaction.time)
+    }
+
     const type = formatTypeForCSV(transaction.kind)
     const amount = formatAmountForCSV(transaction.amount)
-    const category = transaction.category || '  -  '
+    const category = getCategoryNameForCSV(transaction.categoryId, categories)
     const account = getAccountName(transaction.walletId, wallets)
     const notes = transaction.notes || ''
 
