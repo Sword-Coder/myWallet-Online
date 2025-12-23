@@ -90,30 +90,54 @@
               </div>
             </div>
 
-            <div class="text-subtitle2 text-right">
-              <template v-if="isTithesCategory(b)">
-                <!-- Special display for Tithes: show actual vs expected -->
-                <div class="text-right">
-                  <div>
-                    ₱{{ Number(b.spent || 0).toLocaleString() }} / Expected ₱{{
-                      Number(getExpectedTithes()).toLocaleString()
-                    }}
+            <div class="row items-center q-gutter-sm">
+              <div class="text-subtitle2 text-right">
+                <template v-if="isTithesCategory(b)">
+                  <!-- Special display for Tithes: show actual vs expected -->
+                  <div class="text-right">
+                    <div>
+                      ₱{{ Number(b.spent || 0).toLocaleString() }} / Expected ₱{{
+                        Number(getExpectedTithes()).toLocaleString()
+                      }}
+                    </div>
+                    <div class="text-caption text-grey">(10% of salary)</div>
                   </div>
-                  <div class="text-caption text-grey">(10% of salary)</div>
-                </div>
-              </template>
-              <template v-else>
-                <!-- Debug info for non-tithes budgets -->
-                <template v-if="b.amount > 0">
-                  ₱{{ Number(b.spent || 0).toLocaleString() }} / ₱{{
-                    Number(b.amount || 0).toLocaleString()
-                  }}
                 </template>
-                <template v-else-if="b.percent > 0">
-                  ₱{{ Number(b.spent || 0).toLocaleString() }} / {{ b.percent }}%
+                <template v-else>
+                  <!-- Debug info for non-tithes budgets -->
+                  <template v-if="b.amount > 0">
+                    ₱{{ Number(b.spent || 0).toLocaleString() }} / ₱{{
+                      Number(b.amount || 0).toLocaleString()
+                    }}
+                  </template>
+                  <template v-else-if="b.percent > 0">
+                    ₱{{ Number(b.spent || 0).toLocaleString() }} / {{ b.percent }}%
+                  </template>
+                  <template v-else> ₱{{ Number(b.spent || 0).toLocaleString() }} </template>
                 </template>
-                <template v-else> ₱{{ Number(b.spent || 0).toLocaleString() }} </template>
-              </template>
+              </div>
+
+              <!-- Edit and Delete Buttons -->
+              <q-btn
+                flat
+                dense
+                round
+                icon="edit"
+                color="primary"
+                size="sm"
+                @click="editBudget(b)"
+                title="Edit Budget"
+              />
+              <q-btn
+                flat
+                dense
+                round
+                icon="delete"
+                color="negative"
+                size="sm"
+                @click="confirmDeleteBudget(b)"
+                title="Delete Budget"
+              />
             </div>
           </div>
 
@@ -320,6 +344,85 @@ function isTithesCategory(budget) {
 // Get expected tithes amount
 function getExpectedTithes() {
   return expectedTithes.value
+}
+
+// Delete budget with confirmation
+async function confirmDeleteBudget(budget) {
+  const categoryName = getCategoryName(budget.categoryId)
+
+  $q.dialog({
+    title: 'Delete Budget',
+    message: `Are you sure you want to delete the budget for "${categoryName}"?\n\nThis action cannot be undone.`,
+    cancel: true,
+    persistent: true,
+    color: 'negative',
+    ok: {
+      label: 'Delete',
+      color: 'negative',
+    },
+  }).onOk(async () => {
+    try {
+      $q.loading.show({ message: 'Deleting budget...' })
+
+      await budgetsStore.deleteBudget(budget._id)
+
+      $q.notify({
+        type: 'positive',
+        message: `Budget for "${categoryName}" deleted successfully!`,
+      })
+
+      // Refresh the budgets to update the UI
+      await budgetsStore.loadBudgets()
+    } catch (error) {
+      console.error('Failed to delete budget:', error)
+
+      $q.notify({
+        type: 'negative',
+        message: 'Failed to delete budget',
+        caption: error.message || 'Unknown error occurred',
+        timeout: 5000,
+      })
+    } finally {
+      $q.loading.hide()
+    }
+  })
+}
+
+// Edit budget
+function editBudget(budget) {
+  try {
+    console.log('Editing budget:', budget)
+
+    // Get the category name for the budget
+    const categoryName = getCategoryName(budget.categoryId)
+
+    // Determine budget type based on whether amount or percent is set
+    const budgetType = budget.amount > 0 ? 'fixed' : 'percentage'
+
+    // Populate the form with the budget's current data
+    form.value = {
+      categoryName: categoryName,
+      budgetType: budgetType,
+      amount: budget.amount || 0,
+      percent: budget.percent || 0,
+    }
+
+    // Set the editing budget
+    editingBudget.value = budget
+
+    // Open the dialog
+    showDialog.value = true
+
+    console.log('Budget form populated for editing:', form.value)
+  } catch (error) {
+    console.error('Failed to edit budget:', error)
+
+    $q.notify({
+      type: 'negative',
+      message: 'Failed to open budget editor',
+      caption: error.message || 'Unknown error occurred',
+    })
+  }
 }
 
 // Load expected tithes
