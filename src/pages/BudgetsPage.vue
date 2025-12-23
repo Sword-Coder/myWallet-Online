@@ -39,6 +39,19 @@
       />
     </div>
 
+    <!-- Budget Status Indicators -->
+    <div class="row q-gutter-sm q-mb-md">
+      <div v-if="hasWeeklyBudget" class="text-caption text-green-7">
+        <q-icon name="check_circle" size="sm" /> Weekly Budget: Active
+      </div>
+      <div v-if="hasMonthlyBudget" class="text-caption text-green-7">
+        <q-icon name="check_circle" size="sm" /> Monthly Budget: Active
+      </div>
+      <div v-if="!hasWeeklyBudget && !hasMonthlyBudget" class="text-caption text-grey-6">
+        No auto-budgets set
+      </div>
+    </div>
+
     <!-- Debug Info Panel -->
     <q-card v-if="showDebugInfo" class="q-mb-md">
       <q-card-section>
@@ -240,6 +253,7 @@ import { useBudgetsStore } from 'src/stores/budgets'
 import { useCategoriesStore } from 'src/stores/categories'
 import { useUsersStore } from 'src/stores/users'
 import { useAuthStore } from 'src/stores/auth'
+import { useDatabase } from 'src/composables/useDatabase'
 
 // Stores
 const $q = useQuasar()
@@ -264,6 +278,8 @@ const editingBudget = ref(null)
 const selectedWallet = ref(null)
 const showDebugInfo = ref(false)
 const isRefreshing = ref(false)
+const hasWeeklyBudget = ref(false)
+const hasMonthlyBudget = ref(false)
 
 const form = ref({
   categoryName: '',
@@ -441,94 +457,59 @@ async function loadExpectedTithes() {
   }
 }
 
+// Check budget status
+async function checkBudgetStatus() {
+  try {
+    const { localDB } = useDatabase()
+    const userId = authStore.user?._id
+    if (!userId) return
+
+    const userDoc = await localDB.get(userId)
+    hasWeeklyBudget.value = !!userDoc['budgeter-weekly']
+    hasMonthlyBudget.value = !!userDoc['budgeter-monthly']
+  } catch (error) {
+    console.error('Failed to check budget status:', error)
+    hasWeeklyBudget.value = false
+    hasMonthlyBudget.value = false
+  }
+}
+
 // Auto-Budget functionality
 async function autoBudget() {
   try {
-    $q.dialog({
-      title: 'Enable Auto-Budget?',
-      message:
-        'This feature will automatically give you the option to pre-delegate when you add a transaction "Increase". This helps you proactively allocate incoming funds to specific budgets before you spend them.',
-      persistent: true,
-      color: 'primary',
-      ok: {
-        label: 'Enable',
+    // Check current budget status
+    await checkBudgetStatus()
+
+    if (!hasWeeklyBudget.value && !hasMonthlyBudget.value) {
+      // No budgets set - show initial enable dialog
+      $q.dialog({
+        title: 'Enable Auto-Budget?',
+        message:
+          'This feature will automatically give you the option to pre-delegate when you add a transaction "Increase". This helps you proactively allocate incoming funds to specific budgets before you spend them.',
+        persistent: true,
         color: 'primary',
-      },
-      cancel: {
-        label: 'Not Now',
-        color: 'grey',
-      },
-    })
-      .onOk(() => {
-        // Show budget frequency selection dialog
-        $q.dialog({
-          title: 'Choose Budget Frequency',
-          message: 'How often would you like to budget your funds?',
-          persistent: true,
+        ok: {
+          label: 'Enable',
           color: 'primary',
-          options: {
-            type: 'radio',
-            model: 'monthly',
-            items: [
-              { label: 'Monthly Budget', value: 'monthly', color: 'primary' },
-              { label: 'Weekly Budget', value: 'weekly', color: 'primary' },
-            ],
-          },
-          cancel: {
-            label: 'Cancel',
-            color: 'grey',
-          },
-          ok: {
-            label: 'Confirm',
-            color: 'primary',
-          },
-        })
-          .onOk((frequency) => {
-            // Show amount input dialog
-            $q.dialog({
-              title: 'Set Average Income',
-              message: `On average how much money do you get ${frequency} that you want pre-delegated?`,
-              prompt: {
-                model: '',
-                type: 'number',
-                label: `Average ${frequency} income (₱)`,
-                min: 0,
-                isValid: (val) => val > 0,
-              },
-              cancel: {
-                label: 'Cancel',
-                color: 'grey',
-              },
-              ok: {
-                label: 'Confirm',
-                color: 'primary',
-              },
-              persistent: true,
-            })
-              .onOk((totalAmount) => {
-                // Show fullscreen budget allocation dialog
-                showBudgetAllocationDialog(frequency, Number(totalAmount))
-              })
-              .onCancel(() => {
-                $q.notify({
-                  type: 'info',
-                  message: 'Average income amount cancelled.',
-                })
-              })
-          })
-          .onCancel(() => {
-            $q.notify({
-              type: 'info',
-              message: 'Budget frequency selection cancelled.',
-            })
-          })
+        },
+        cancel: {
+          label: 'Not Now',
+          color: 'grey',
+        },
       })
-      .onCancel(() => {
-        $q.notify({
-          type: 'info',
-          message: 'Auto-Budget disabled. You can enable it anytime from this page.',
+        .onOk(() => {
+          showFrequencySelectionDialog()
         })
-      })
+        .onCancel(() => {
+          $q.notify({
+            type: 'info',
+            message: 'Auto-Budget disabled. You can enable it anytime from this page.',
+          })
+        })
+    } else {
+      // Has some budgets - show management dialog
+      showBudgetManagementDialog()
+    }
   } catch (error) {
     console.error('Auto-Budget error:', error)
     $q.notify({
@@ -539,32 +520,193 @@ async function autoBudget() {
   }
 }
 
-// Budget allocation dialog
-function showBudgetAllocationDialog(frequency, totalAmount) {
-  // Pre-defined categories from template
-  const categories = [
-    { name: 'Tithes', amount: 0, percent: 10, locked: true },
-    { name: 'Faith Promise', amount: 0, percent: 0, locked: false },
-    { name: 'Rent/Housing', amount: 0, percent: 0, locked: false },
-    { name: 'Food', amount: 0, percent: 0, locked: false },
-    { name: 'Transportation', amount: 0, percent: 0, locked: false },
-    { name: 'Utilities', amount: 0, percent: 0, locked: false },
-    { name: 'Insurance', amount: 0, percent: 0, locked: false },
-    { name: 'Medical/Health', amount: 0, percent: 0, locked: false },
-    { name: 'Clothing', amount: 0, percent: 0, locked: false },
-    { name: 'Education/Learning', amount: 0, percent: 0, locked: false },
-    { name: 'Entertainment/Recreation', amount: 0, percent: 0, locked: false },
-    { name: 'Savings', amount: 0, percent: 0, locked: false },
-    { name: 'Emergency Fund', amount: 0, percent: 0, locked: false },
-    { name: 'Debt Payments', amount: 0, percent: 0, locked: false },
-    { name: 'Miscellaneous', amount: 0, percent: 0, locked: false },
-  ]
+// Show frequency selection dialog
+function showFrequencySelectionDialog() {
+  $q.dialog({
+    title: 'Choose Budget Frequency',
+    message: 'How often would you like to budget your funds?',
+    persistent: true,
+    color: 'primary',
+    options: {
+      type: 'radio',
+      model: 'monthly',
+      items: [
+        { label: 'Monthly Budget', value: 'monthly', color: 'primary' },
+        { label: 'Weekly Budget', value: 'weekly', color: 'primary' },
+      ],
+    },
+    cancel: {
+      label: 'Cancel',
+      color: 'grey',
+    },
+    ok: {
+      label: 'Confirm',
+      color: 'primary',
+    },
+  })
+    .onOk((frequency) => {
+      showIncomeInputDialog(frequency)
+    })
+    .onCancel(() => {
+      $q.notify({
+        type: 'info',
+        message: 'Budget frequency selection cancelled.',
+      })
+    })
+}
 
-  // Set tithes to 10% (locked)
-  const tithesIndex = categories.findIndex((cat) => cat.name === 'Tithes')
-  if (tithesIndex !== -1) {
-    categories[tithesIndex].amount = (totalAmount * 0.1).toFixed(0)
-    categories[tithesIndex].percent = 10
+// Show income input dialog
+function showIncomeInputDialog(frequency) {
+  $q.dialog({
+    title: 'Set Average Income',
+    message: `On average how much money do you get ${frequency} that you want pre-delegated?`,
+    prompt: {
+      model: '',
+      type: 'number',
+      label: `Average ${frequency} income (₱)`,
+      min: 0,
+      isValid: (val) => val > 0,
+    },
+    cancel: {
+      label: 'Cancel',
+      color: 'grey',
+    },
+    ok: {
+      label: 'Confirm',
+      color: 'primary',
+    },
+    persistent: true,
+  })
+    .onOk((totalAmount) => {
+      // Show fullscreen budget allocation dialog
+      showBudgetAllocationDialog(frequency, Number(totalAmount))
+    })
+    .onCancel(() => {
+      $q.notify({
+        type: 'info',
+        message: 'Average income amount cancelled.',
+      })
+    })
+}
+
+// Show budget management dialog
+function showBudgetManagementDialog() {
+  const options = []
+
+  if (hasWeeklyBudget.value) {
+    options.push({ label: 'Edit Weekly Budget', value: 'edit-weekly' })
+  } else {
+    options.push({ label: 'Create Weekly Budget', value: 'create-weekly' })
+  }
+
+  if (hasMonthlyBudget.value) {
+    options.push({ label: 'Edit Monthly Budget', value: 'edit-monthly' })
+  } else {
+    options.push({ label: 'Create Monthly Budget', value: 'create-monthly' })
+  }
+
+  $q.dialog({
+    title: 'Manage Auto-Budgets',
+    message: 'Select an option to manage your budget allocations.',
+    persistent: true,
+    color: 'primary',
+    options: {
+      type: 'radio',
+      model: '',
+      items: options,
+    },
+    cancel: {
+      label: 'Cancel',
+      color: 'grey',
+    },
+    ok: {
+      label: 'Continue',
+      color: 'primary',
+    },
+  })
+    .onOk(async (action) => {
+      if (action === 'edit-weekly' || action === 'edit-monthly') {
+        await editExistingBudget(action === 'edit-weekly' ? 'weekly' : 'monthly')
+      } else if (action === 'create-weekly' || action === 'create-monthly') {
+        showIncomeInputDialog(action === 'create-weekly' ? 'weekly' : 'monthly')
+      }
+    })
+    .onCancel(() => {
+      $q.notify({
+        type: 'info',
+        message: 'Budget management cancelled.',
+      })
+    })
+}
+
+// Edit existing budget
+async function editExistingBudget(frequency) {
+  try {
+    const { localDB } = useDatabase()
+    const userId = authStore.user?._id
+    if (!userId) return
+
+    const userDoc = await localDB.get(userId)
+    const budgetId = userDoc[`budgeter-${frequency}`]
+    if (!budgetId) {
+      $q.notify({
+        type: 'negative',
+        message: 'Budget not found',
+      })
+      return
+    }
+
+    const budgetDoc = await localDB.get(budgetId)
+    // Pre-populate the dialog with existing data
+    showBudgetAllocationDialog(frequency, budgetDoc.totalAmount, budgetDoc.categories, budgetId)
+  } catch (error) {
+    console.error('Failed to edit existing budget:', error)
+    $q.notify({
+      type: 'negative',
+      message: 'Failed to load existing budget',
+      caption: error.message,
+    })
+  }
+}
+
+// Budget allocation dialog
+function showBudgetAllocationDialog(
+  frequency,
+  totalAmount,
+  existingCategories = null,
+  existingId = null,
+) {
+  // Use existing categories if provided, otherwise use default template
+  let categories
+  if (existingCategories) {
+    categories = JSON.parse(JSON.stringify(existingCategories)) // Deep copy
+  } else {
+    categories = [
+      { name: 'Tithes', amount: 0, percent: 10, locked: true },
+      { name: 'Faith Promise', amount: 0, percent: 0, locked: false },
+      { name: 'Rent/Housing', amount: 0, percent: 0, locked: false },
+      { name: 'Food', amount: 0, percent: 0, locked: false },
+      { name: 'Transportation', amount: 0, percent: 0, locked: false },
+      { name: 'Utilities', amount: 0, percent: 0, locked: false },
+      { name: 'Insurance', amount: 0, percent: 0, locked: false },
+      { name: 'Medical/Health', amount: 0, percent: 0, locked: false },
+      { name: 'Clothing', amount: 0, percent: 0, locked: false },
+      { name: 'Education/Learning', amount: 0, percent: 0, locked: false },
+      { name: 'Entertainment/Recreation', amount: 0, percent: 0, locked: false },
+      { name: 'Savings', amount: 0, percent: 0, locked: false },
+      { name: 'Emergency Fund', amount: 0, percent: 0, locked: false },
+      { name: 'Debt Payments', amount: 0, percent: 0, locked: false },
+      { name: 'Miscellaneous', amount: 0, percent: 0, locked: false },
+    ]
+  }
+
+  // Set tithes to 10% (locked) only for new budgets
+  if (!existingCategories) {
+    const tithesIndex = categories.findIndex((cat) => cat.name === 'Tithes')
+    if (tithesIndex !== -1) {
+      categories[tithesIndex].amount = (totalAmount * 0.1).toFixed(0)
+      categories[tithesIndex].percent = 10
+    }
   }
 
   // Create fullscreen dialog with custom layout
@@ -652,7 +794,7 @@ function showBudgetAllocationDialog(frequency, totalAmount) {
                 >₱${Number(category.amount).toLocaleString()}</span>
               </div>
               <div style="text-align: right;">
-                <span class="percent-display">${category.percent.toFixed(1)}%</span>
+                <span class="percent-display">${Number(category.percent).toFixed(1)}%</span>
               </div>
               <div style="text-align: right;">
                 ${
@@ -784,27 +926,61 @@ function showBudgetAllocationDialog(frequency, totalAmount) {
     })
   })
 
-  saveBtn.addEventListener('click', () => {
-    const allocationData = {
-      frequency,
-      totalAmount,
-      categories: categories.map((cat) => ({
-        name: cat.name,
-        amount: cat.amount,
-        percent: cat.percent,
-        locked: cat.locked,
-      })),
+  saveBtn.addEventListener('click', async () => {
+    try {
+      const { localDB } = useDatabase()
+      const userId = authStore.user?._id
+      if (!userId) {
+        $q.notify({
+          type: 'negative',
+          message: 'User not authenticated',
+        })
+        return
+      }
+
+      const allocationId = existingId || `budget_allocation_${userId}_${frequency}_${Date.now()}`
+
+      const allocationData = {
+        _id: allocationId,
+        userId,
+        frequency,
+        totalAmount,
+        categories: categories.map((cat) => ({
+          name: cat.name,
+          amount: cat.amount,
+          percent: cat.percent,
+          locked: cat.locked,
+        })),
+        createdAt: existingId ? undefined : new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+
+      // Save allocation document
+      await localDB.put(allocationData)
+
+      // Update user document
+      const userDoc = await localDB.get(userId)
+      userDoc[`budgeter-${frequency}`] = allocationId
+      await localDB.put(userDoc)
+
+      document.querySelector('.fullscreen-budget-dialog').remove()
+
+      $q.notify({
+        type: 'positive',
+        message: `Budget allocation ${existingId ? 'updated' : 'saved'} successfully!`,
+        caption: `₱${totalAmount.toLocaleString()} allocated across ${categories.length} categories`,
+      })
+
+      // Refresh budget status
+      await checkBudgetStatus()
+    } catch (error) {
+      console.error('Failed to save budget allocation:', error)
+      $q.notify({
+        type: 'negative',
+        message: 'Failed to save budget allocation',
+        caption: error.message,
+      })
     }
-
-    document.querySelector('.fullscreen-budget-dialog').remove()
-
-    $q.notify({
-      type: 'positive',
-      message: `Auto-Budget enabled with ${frequency} frequency!`,
-      caption: `₱${totalAmount.toLocaleString()} allocated across ${categories.length} categories`,
-    })
-
-    console.log('Budget allocation saved:', allocationData)
   })
 
   // Add event listeners for amount displays (click to edit)
@@ -1612,6 +1788,9 @@ onMounted(async () => {
 
   // Load expected tithes
   await loadExpectedTithes()
+
+  // Check budget status
+  await checkBudgetStatus()
 
   // Set default wallet
   if (wallets.value.length > 0) {
