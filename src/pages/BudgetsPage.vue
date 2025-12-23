@@ -544,6 +544,7 @@ function showBudgetAllocationDialog(frequency, totalAmount) {
   // Pre-defined categories from template
   const categories = [
     { name: 'Tithes', amount: 0, percent: 10, locked: true },
+    { name: 'Faith Promise', amount: 0, percent: 0, locked: false },
     { name: 'Rent/Housing', amount: 0, percent: 0, locked: false },
     { name: 'Food', amount: 0, percent: 0, locked: false },
     { name: 'Transportation', amount: 0, percent: 0, locked: false },
@@ -599,8 +600,8 @@ function showBudgetAllocationDialog(frequency, totalAmount) {
         <div class="budget-table">
           <div class="budget-header" style="
             display: grid;
-            grid-template-columns: 50% 25% 25%;
-            gap: 10px;
+            grid-template-columns: 40% 20% 20% 20%;
+            gap: 8px;
             padding: 12px;
             background: #f5f5f5;
             border-radius: 4px;
@@ -610,65 +611,100 @@ function showBudgetAllocationDialog(frequency, totalAmount) {
             <div>Category</div>
             <div style="text-align: right;">Amount (₱)</div>
             <div style="text-align: right;">Percentage</div>
+            <div style="text-align: center;">Actions</div>
           </div>
           ${categories
             .map(
               (category, index) => `
             <div class="budget-row" style="
               display: grid;
-              grid-template-columns: 50% 25% 25%;
-              gap: 10px;
+              grid-template-columns: 40% 20% 20% 20%;
+              gap: 8px;
               padding: 12px;
               border-bottom: 1px solid #eee;
               background: white;
               align-items: center;
+              height: 50px;
             ">
-              <div>
-                ${
-                  category.locked
-                    ? `<div style="color: #1976d2; font-weight: 500; font-size: 16px;">${category.name} (10% - Locked)</div>`
-                    : `<div style="font-weight: 500; font-size: 16px; margin-bottom: 8px;">${category.name}</div>
-                       <input type="number" class="category-amount" data-index="${index}" value="${category.amount}"
-                         placeholder="Enter amount for ${category.name}" style="
-                           width: 100%;
-                           padding: 12px 15px;
-                           border: 2px solid #e0e0e0;
-                           border-radius: 8px;
-                           font-size: 16px;
-                           font-weight: 500;
-                           box-sizing: border-box;
-                           background: #fafafa;
-                           transition: all 0.2s ease;
-                           cursor: pointer;
-                         "
-                         onfocus="this.style.borderColor='#2196f3'; this.style.background='white'; this.style.boxShadow='0 0 0 3px rgba(33, 150, 243, 0.1)'"
-                         onblur="this.style.borderColor='#e0e0e0'; this.style.background='#fafafa'; this.style.boxShadow='none'"
-                         onmouseover="this.style.borderColor='#2196f3'"
-                         onmouseout="this.style.borderColor='#e0e0e0'"
-                         >`
-                }
-              </div>
+              <div style="font-weight: 500; font-size: 16px; color: #424242; text-align: left;" class="category-name">${category.name}</div>
               <div style="text-align: right;">
+                <span class="amount-display ${category.locked ? '' : 'clickable-amount'}" ${!category.locked ? `data-index="${index}"` : ''} style="
+                  font-weight: 500;
+                  font-size: 18px;
+                  color: ${category.locked ? '#1976d2' : '#424242'};
+                  ${!category.locked ? 'cursor: pointer;' : ''}
+                  padding: 8px 12px;
+                  border: 2px solid transparent;
+                  border-radius: 6px;
+                  ${!category.locked ? 'transition: all 0.2s ease;' : ''}
+                  display: inline-block;
+                  min-width: 100px;
+                  text-align: center;
+                "
                 ${
-                  category.locked
-                    ? `<span style="font-weight: 500;">₱${Number(category.amount).toLocaleString()}</span>`
-                    : `<span class="amount-display">₱${Number(category.amount).toLocaleString()}</span>`
+                  !category.locked
+                    ? `
+                  onmouseover="this.style.backgroundColor='#f5f5f5'; this.style.borderColor='#2196f3'"
+                  onmouseout="this.style.backgroundColor='transparent'; this.style.borderColor='transparent'"
+                `
+                    : ''
                 }
+                >₱${Number(category.amount).toLocaleString()}</span>
               </div>
               <div style="text-align: right;">
                 <span class="percent-display">${category.percent.toFixed(1)}%</span>
+              </div>
+              <div style="text-align: right;">
+                ${
+                  !category.locked
+                    ? `<div style="display: flex; gap: 4px; justify-content: flex-end;">
+                        <button class="edit-category-btn" data-index="${index}" style="
+                          padding: 2px 6px;
+                          font-size: 11px;
+                          background: #2196f3;
+                          color: white;
+                          border: none;
+                          border-radius: 3px;
+                          cursor: pointer;
+                        ">Rename</button>
+                        <button class="delete-category-btn" data-index="${index}" style="
+                          padding: 2px 4px;
+                          font-size: 11px;
+                          background: #f44336;
+                          color: white;
+                          border: none;
+                          border-radius: 3px;
+                          cursor: pointer;
+                        " title="Delete"><i class="material-icons" style="font-size: 14px;">delete</i></button>
+                      </div>`
+                    : ''
+                }
               </div>
             </div>
           `,
             )
             .join('')}
 
+          <!-- Add Category Button -->
+          <div style="text-align: center; margin: 10px 0;">
+            <button id="add-category-btn" style="
+              padding: 8px 16px;
+              background: #4caf50;
+              color: white;
+              border: none;
+              border-radius: 4px;
+              cursor: pointer;
+              font-size: 14px;
+              margin-top: 10px;
+            ">Add Category</button>
+          </div>
+
           <!-- Summary Section -->
           <div class="budget-summary" style="margin-top: 20px;">
             <div class="budget-total" style="
               display: grid;
-              grid-template-columns: 50% 25% 25%;
-              gap: 10px;
+              grid-template-columns: 40% 20% 20% 20%;
+              gap: 8px;
               padding: 16px;
               background: #e3f2fd;
               border: 2px solid #2196f3;
@@ -679,11 +715,12 @@ function showBudgetAllocationDialog(frequency, totalAmount) {
               <div style="font-weight: bold;">Total Allocated:</div>
               <div style="text-align: right; font-weight: bold;">₱<span id="total-allocated">0</span></div>
               <div style="text-align: right; font-weight: bold;"><span id="total-percent">0.0</span>%</div>
+              <div></div>
             </div>
             <div class="budget-remaining" style="
               display: grid;
-              grid-template-columns: 50% 25% 25%;
-              gap: 10px;
+              grid-template-columns: 40% 20% 20% 20%;
+              gap: 8px;
               padding: 16px;
               background: #fff3e0;
               border: 2px solid #ff9800;
@@ -693,6 +730,7 @@ function showBudgetAllocationDialog(frequency, totalAmount) {
               <div style="font-weight: bold;">Remaining:</div>
               <div style="text-align: right; font-weight: bold; color: #ff9800;">₱<span id="remaining-amount">${totalAmount.toLocaleString()}</span></div>
               <div style="text-align: right; font-weight: bold; color: #ff9800;"><span id="remaining-percent">100.0</span>%</div>
+              <div></div>
             </div>
           </div>
         </div>
@@ -769,37 +807,440 @@ function showBudgetAllocationDialog(frequency, totalAmount) {
     console.log('Budget allocation saved:', allocationData)
   })
 
-  // Add event listeners for amount inputs
+  // Add event listeners for amount displays (click to edit)
   setTimeout(() => {
-    const amountInputs = document.querySelectorAll('.category-amount')
-    amountInputs.forEach((input) => {
-      input.addEventListener('input', (e) => {
+    const amountDisplays = document.querySelectorAll('.clickable-amount')
+    amountDisplays.forEach((display) => {
+      display.addEventListener('click', (e) => {
         const index = parseInt(e.target.dataset.index)
-        const amount = Number(e.target.value) || 0
-        const percent = ((amount / totalAmount) * 100).toFixed(1)
+        const currentAmount = categories[index].amount
 
-        categories[index].amount = amount
-        categories[index].percent = percent
+        // Create input field
+        const input = document.createElement('input')
+        input.type = 'number'
+        input.min = '0'
+        input.value = currentAmount
+        input.style.cssText = `
+          width: 100%;
+          padding: 8px 12px;
+          border: 2px solid #2196f3;
+          border-radius: 6px;
+          font-size: 18px;
+          font-weight: 500;
+          text-align: center;
+          background: white;
+          box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+        `
 
-        // Update displays
-        const row = e.target.closest('.budget-row')
-        const amountDisplay = row.querySelector('.amount-display')
-        const percentDisplay = row.querySelector('.percent-display')
+        // Replace display with input
+        e.target.style.display = 'none'
+        e.target.parentNode.appendChild(input)
+        input.focus()
+        input.select()
 
-        if (amountDisplay) amountDisplay.textContent = `₱${amount.toLocaleString()}`
-        if (percentDisplay) percentDisplay.textContent = `${percent}%`
+        // Handle input events
+        const updateAmount = () => {
+          let amount = Number(input.value) || 0
 
-        updateTotals()
+          // Prevent negative numbers
+          if (amount < 0) {
+            amount = 0
+            input.value = '0'
+            // Show pretty notification
+            const notification = document.createElement('div')
+            notification.textContent = 'Negative numbers are not allowed. Amount set to 0.'
+            notification.style.cssText = `
+              position: fixed;
+              top: 20px;
+              right: 20px;
+              background: #f44336;
+              color: white;
+              padding: 12px 16px;
+              border-radius: 4px;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+              z-index: 10000;
+              font-family: Arial, sans-serif;
+              font-size: 14px;
+            `
+            document.body.appendChild(notification)
+            setTimeout(() => {
+              notification.remove()
+            }, 3000)
+            return
+          }
+
+          // Calculate max allowed amount for this category
+          const currentTotalExcluding = categories.reduce(
+            (sum, cat, i) => (i !== index ? sum + Number(cat.amount) : sum),
+            0,
+          )
+          const maxAmount = totalAmount - currentTotalExcluding
+
+          // Prevent over-allocation
+          if (amount > maxAmount) {
+            amount = maxAmount
+            input.value = amount
+          }
+
+          const percent = ((amount / totalAmount) * 100).toFixed(1)
+
+          categories[index].amount = amount
+          categories[index].percent = percent
+
+          // Update displays
+          e.target.textContent = `₱${amount.toLocaleString()}`
+          const percentDisplay = e.target.closest('.budget-row').querySelector('.percent-display')
+          if (percentDisplay) percentDisplay.textContent = `${percent}%`
+
+          updateTotals()
+        }
+
+        input.addEventListener('input', updateAmount)
+
+        input.addEventListener('blur', () => {
+          // Restore display
+          input.remove()
+          e.target.style.display = 'inline-block'
+          updateAmount()
+        })
+
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            input.blur()
+          } else if (event.key === 'Escape') {
+            // Restore original value
+            input.value = currentAmount
+            input.blur()
+          }
+        })
       })
     })
 
     // Initial calculation
     updateTotals()
+
+    // Add event listeners for edit category
+    const editCategoryBtns = document.querySelectorAll('.edit-category-btn')
+    editCategoryBtns.forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const index = parseInt(e.target.dataset.index)
+        const nameDiv = e.target.closest('.budget-row').querySelector('.category-name')
+        const currentName = categories[index].name
+        const input = document.createElement('input')
+        input.value = currentName
+        input.style.cssText = `width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px;`
+        nameDiv.style.display = 'none'
+        nameDiv.parentNode.insertBefore(input, nameDiv)
+        input.focus()
+        input.addEventListener('blur', () => {
+          categories[index].name = input.value.trim() || currentName
+          nameDiv.textContent = categories[index].name
+          nameDiv.style.display = 'block'
+          input.remove()
+        })
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') input.blur()
+          if (event.key === 'Escape') {
+            input.value = currentName
+            input.blur()
+          }
+        })
+      })
+    })
+
+    // Add event listeners for delete category
+    const deleteCategoryBtns = document.querySelectorAll('.delete-category-btn')
+    deleteCategoryBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const index = parseInt(btn.dataset.index)
+        const categoryName = categories[index].name
+
+        // Create custom confirmation dialog
+        const overlay = document.createElement('div')
+        overlay.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          background: rgba(0,0,0,0.5);
+          z-index: 10001;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        `
+
+        const dialog = document.createElement('div')
+        dialog.style.cssText = `
+          background: white;
+          padding: 20px;
+          border-radius: 8px;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+          max-width: 400px;
+          text-align: center;
+        `
+
+        const message = document.createElement('p')
+        message.textContent = `Are you sure you want to delete the category "${categoryName}"?`
+        message.style.cssText = `margin: 0 0 20px 0; font-size: 16px; color: #333;`
+
+        const buttonContainer = document.createElement('div')
+        buttonContainer.style.cssText = `display: flex; gap: 10px; justify-content: center;`
+
+        const cancelBtn = document.createElement('button')
+        cancelBtn.textContent = 'Cancel'
+        cancelBtn.style.cssText = `
+          padding: 8px 16px;
+          background: #6c757d;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+        `
+
+        const deleteBtn = document.createElement('button')
+        deleteBtn.textContent = 'Delete'
+        deleteBtn.style.cssText = `
+          padding: 8px 16px;
+          background: #f44336;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+        `
+
+        buttonContainer.appendChild(cancelBtn)
+        buttonContainer.appendChild(deleteBtn)
+        dialog.appendChild(message)
+        dialog.appendChild(buttonContainer)
+        overlay.appendChild(dialog)
+        document.body.appendChild(overlay)
+
+        cancelBtn.addEventListener('click', () => {
+          overlay.remove()
+        })
+
+        deleteBtn.addEventListener('click', () => {
+          overlay.remove()
+          categories.splice(index, 1)
+          btn.closest('.budget-row').remove()
+          // Update data-index for remaining rows
+          const remainingRows = document.querySelectorAll('.budget-row')
+          remainingRows.forEach((row, idx) => {
+            const editBtn = row.querySelector('.edit-category-btn')
+            const deleteBtn = row.querySelector('.delete-category-btn')
+            const amountDisplay = row.querySelector('.clickable-amount')
+            if (editBtn) editBtn.dataset.index = idx
+            if (deleteBtn) deleteBtn.dataset.index = idx
+            if (amountDisplay) amountDisplay.dataset.index = idx
+          })
+          updateTotals()
+        })
+      })
+    })
+
+    // Add event listener for add category
+    const addCategoryBtn = document.getElementById('add-category-btn')
+    addCategoryBtn.addEventListener('click', () => {
+      const newCategory = { name: 'New Category', amount: 0, percent: 0, locked: false }
+      categories.push(newCategory)
+      const index = categories.length - 1
+
+      // Generate HTML for new row
+      const rowHtml = `
+        <div class="budget-row" style="
+          display: grid;
+          grid-template-columns: 40% 20% 20% 20%;
+          gap: 8px;
+          padding: 12px;
+          border-bottom: 1px solid #eee;
+          background: white;
+          align-items: center;
+          height: 50px;
+        ">
+          <div style="font-weight: 500; font-size: 16px; color: #424242; text-align: left;" class="category-name">${newCategory.name}</div>
+          <div style="text-align: right;">
+            <span class="amount-display clickable-amount" data-index="${index}" style="
+              font-weight: 500;
+              font-size: 18px;
+              color: #424242;
+              cursor: pointer;
+              padding: 8px 12px;
+              border: 2px solid transparent;
+              border-radius: 6px;
+              transition: all 0.2s ease;
+              display: inline-block;
+              min-width: 100px;
+              text-align: center;
+            "
+            onmouseover="this.style.backgroundColor='#f5f5f5'; this.style.borderColor='#2196f3'"
+            onmouseout="this.style.backgroundColor='transparent'; this.style.borderColor='transparent'"
+            >₱0</span>
+          </div>
+          <div style="text-align: right;">
+            <span class="percent-display">0.0%</span>
+          </div>
+          <div style="text-align: right;">
+            <div style="display: flex; gap: 4px; justify-content: flex-end;">
+              <button class="edit-category-btn" data-index="${index}" style="
+                padding: 2px 6px;
+                font-size: 11px;
+                background: #2196f3;
+                color: white;
+                border: none;
+                border-radius: 3px;
+                cursor: pointer;
+              ">Rename</button>
+              <button class="delete-category-btn" data-index="${index}" style="
+                padding: 2px 4px;
+                font-size: 11px;
+                background: #f44336;
+                color: white;
+                border: none;
+                border-radius: 3px;
+                cursor: pointer;
+              " title="Delete"><i class="material-icons" style="font-size: 14px;">delete</i></button>
+            </div>
+          </div>
+        </div>
+      `
+
+      // Insert before the add button
+      const addBtn = document.getElementById('add-category-btn')
+      addBtn.insertAdjacentHTML('beforebegin', rowHtml)
+
+      // Add event listeners for the new row
+      const budgetTable = document.querySelector('.budget-table')
+      const newAmountDisplay = budgetTable.querySelector(`.clickable-amount[data-index="${index}"]`)
+      newAmountDisplay.addEventListener('click', (e) => {
+        const index = parseInt(e.target.dataset.index)
+        const currentAmount = categories[index].amount
+        const input = document.createElement('input')
+        input.type = 'number'
+        input.min = '0'
+        input.value = currentAmount
+        input.style.cssText = `
+          width: 100%;
+          padding: 8px 12px;
+          border: 2px solid #2196f3;
+          border-radius: 6px;
+          font-size: 18px;
+          font-weight: 500;
+          text-align: center;
+          background: white;
+          box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+        `
+        e.target.style.display = 'none'
+        e.target.parentNode.appendChild(input)
+        input.focus()
+        input.select()
+        const updateAmount = () => {
+          let amount = Number(input.value) || 0
+
+          // Prevent negative numbers
+          if (amount < 0) {
+            amount = 0
+            input.value = '0'
+            // Show pretty notification
+            const notification = document.createElement('div')
+            notification.textContent = 'Negative numbers are not allowed. Amount set to 0.'
+            notification.style.cssText = `
+              position: fixed;
+              top: 20px;
+              right: 20px;
+              background: #f44336;
+              color: white;
+              padding: 12px 16px;
+              border-radius: 4px;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+              z-index: 10000;
+              font-family: Arial, sans-serif;
+              font-size: 14px;
+            `
+            document.body.appendChild(notification)
+            setTimeout(() => {
+              notification.remove()
+            }, 3000)
+            return
+          }
+
+          const currentTotalExcluding = categories.reduce(
+            (sum, cat, i) => (i !== index ? sum + Number(cat.amount) : sum),
+            0,
+          )
+          const maxAmount = totalAmount - currentTotalExcluding
+          if (amount > maxAmount) {
+            amount = maxAmount
+            input.value = amount
+          }
+          const percent = ((amount / totalAmount) * 100).toFixed(1)
+          categories[index].amount = amount
+          categories[index].percent = percent
+          e.target.textContent = `₱${amount.toLocaleString()}`
+          const percentDisplay = e.target.closest('.budget-row').querySelector('.percent-display')
+          if (percentDisplay) percentDisplay.textContent = `${percent}%`
+          updateTotals()
+        }
+        input.addEventListener('input', updateAmount)
+        input.addEventListener('blur', () => {
+          input.remove()
+          e.target.style.display = 'inline-block'
+          updateAmount()
+        })
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            input.blur()
+          } else if (event.key === 'Escape') {
+            input.value = currentAmount
+            input.blur()
+          }
+        })
+      })
+
+      const newEditBtn = budgetTable.querySelector(`.edit-category-btn[data-index="${index}"]`)
+      newEditBtn.addEventListener('click', (e) => {
+        const index = parseInt(e.target.dataset.index)
+        const nameDiv = e.target.closest('.budget-row').querySelector('.category-name')
+        const currentName = categories[index].name
+        const input = document.createElement('input')
+        input.value = currentName
+        input.style.cssText = `width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px;`
+        nameDiv.style.display = 'none'
+        nameDiv.parentNode.insertBefore(input, nameDiv)
+        input.focus()
+        input.addEventListener('blur', () => {
+          categories[index].name = input.value.trim() || currentName
+          nameDiv.textContent = categories[index].name
+          nameDiv.style.display = 'block'
+          input.remove()
+        })
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') input.blur()
+          if (event.key === 'Escape') {
+            input.value = currentName
+            input.blur()
+          }
+        })
+      })
+
+      const newDeleteBtn = budgetTable.querySelector(`.delete-category-btn[data-index="${index}"]`)
+      newDeleteBtn.addEventListener('click', (e) => {
+        const index = parseInt(e.target.dataset.index)
+        const categoryName = categories[index].name
+        if (confirm(`Are you sure you want to delete the category "${categoryName}"?`)) {
+          categories.splice(index, 1)
+          e.target.closest('.budget-row').remove()
+          updateTotals()
+        }
+      })
+
+      updateTotals()
+    })
   }, 100)
 
   function updateTotals() {
     const totalAllocated = categories.reduce((sum, cat) => sum + Number(cat.amount), 0)
-    const totalPercent = categories.reduce((sum, cat) => sum + Number(cat.percent), 0)
+    const totalPercent = (totalAllocated / totalAmount) * 100
     const remaining = totalAmount - totalAllocated
     const remainingPercent = 100 - totalPercent
 
