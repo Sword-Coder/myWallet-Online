@@ -23,6 +23,7 @@
     <!-- Action Buttons -->
     <div class="row q-gutter-sm q-mb-md">
       <q-btn color="primary" icon="add" label="Add Budget" @click="showDialog = true" />
+      <q-btn color="primary" icon="auto_fix_high" label="Auto-Budget" @click="autoBudget" />
       <q-btn
         color="secondary"
         icon="refresh"
@@ -437,6 +438,381 @@ async function loadExpectedTithes() {
   } catch (error) {
     console.error('Failed to load expected tithes:', error)
     expectedTithes.value = 0
+  }
+}
+
+// Auto-Budget functionality
+async function autoBudget() {
+  try {
+    $q.dialog({
+      title: 'Enable Auto-Budget?',
+      message:
+        'This feature will automatically give you the option to pre-delegate when you add a transaction "Increase". This helps you proactively allocate incoming funds to specific budgets before you spend them.',
+      persistent: true,
+      color: 'primary',
+      ok: {
+        label: 'Enable',
+        color: 'primary',
+      },
+      cancel: {
+        label: 'Not Now',
+        color: 'grey',
+      },
+    })
+      .onOk(() => {
+        // Show budget frequency selection dialog
+        $q.dialog({
+          title: 'Choose Budget Frequency',
+          message: 'How often would you like to budget your funds?',
+          persistent: true,
+          color: 'primary',
+          options: {
+            type: 'radio',
+            model: 'monthly',
+            items: [
+              { label: 'Monthly Budget', value: 'monthly', color: 'primary' },
+              { label: 'Weekly Budget', value: 'weekly', color: 'primary' },
+            ],
+          },
+          cancel: {
+            label: 'Cancel',
+            color: 'grey',
+          },
+          ok: {
+            label: 'Confirm',
+            color: 'primary',
+          },
+        })
+          .onOk((frequency) => {
+            // Show amount input dialog
+            $q.dialog({
+              title: 'Set Average Income',
+              message: `On average how much money do you get ${frequency} that you want pre-delegated?`,
+              prompt: {
+                model: '',
+                type: 'number',
+                label: `Average ${frequency} income (₱)`,
+                min: 0,
+                isValid: (val) => val > 0,
+              },
+              cancel: {
+                label: 'Cancel',
+                color: 'grey',
+              },
+              ok: {
+                label: 'Confirm',
+                color: 'primary',
+              },
+              persistent: true,
+            })
+              .onOk((totalAmount) => {
+                // Show fullscreen budget allocation dialog
+                showBudgetAllocationDialog(frequency, Number(totalAmount))
+              })
+              .onCancel(() => {
+                $q.notify({
+                  type: 'info',
+                  message: 'Average income amount cancelled.',
+                })
+              })
+          })
+          .onCancel(() => {
+            $q.notify({
+              type: 'info',
+              message: 'Budget frequency selection cancelled.',
+            })
+          })
+      })
+      .onCancel(() => {
+        $q.notify({
+          type: 'info',
+          message: 'Auto-Budget disabled. You can enable it anytime from this page.',
+        })
+      })
+  } catch (error) {
+    console.error('Auto-Budget error:', error)
+    $q.notify({
+      type: 'negative',
+      message: 'Auto-Budget feature error',
+      caption: error.message || 'Unknown error occurred',
+    })
+  }
+}
+
+// Budget allocation dialog
+function showBudgetAllocationDialog(frequency, totalAmount) {
+  // Pre-defined categories from template
+  const categories = [
+    { name: 'Tithes', amount: 0, percent: 10, locked: true },
+    { name: 'Rent/Housing', amount: 0, percent: 0, locked: false },
+    { name: 'Food', amount: 0, percent: 0, locked: false },
+    { name: 'Transportation', amount: 0, percent: 0, locked: false },
+    { name: 'Utilities', amount: 0, percent: 0, locked: false },
+    { name: 'Insurance', amount: 0, percent: 0, locked: false },
+    { name: 'Medical/Health', amount: 0, percent: 0, locked: false },
+    { name: 'Clothing', amount: 0, percent: 0, locked: false },
+    { name: 'Education/Learning', amount: 0, percent: 0, locked: false },
+    { name: 'Entertainment/Recreation', amount: 0, percent: 0, locked: false },
+    { name: 'Savings', amount: 0, percent: 0, locked: false },
+    { name: 'Emergency Fund', amount: 0, percent: 0, locked: false },
+    { name: 'Debt Payments', amount: 0, percent: 0, locked: false },
+    { name: 'Miscellaneous', amount: 0, percent: 0, locked: false },
+  ]
+
+  // Set tithes to 10% (locked)
+  const tithesIndex = categories.findIndex((cat) => cat.name === 'Tithes')
+  if (tithesIndex !== -1) {
+    categories[tithesIndex].amount = (totalAmount * 0.1).toFixed(0)
+    categories[tithesIndex].percent = 10
+  }
+
+  // Create fullscreen dialog with custom layout
+  const dialogHtml = `
+    <div class="fullscreen-budget-dialog" style="
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: white;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+    ">
+      <!-- Header -->
+      <div class="dialog-header" style="
+        padding: 20px;
+        border-bottom: 1px solid #e0e0e0;
+        background: #f8f9fa;
+      ">
+        <div class="text-h5 text-weight-bold">Budget Allocation - ${frequency.charAt(0).toUpperCase() + frequency.slice(1)}</div>
+        <div class="text-subtitle1 text-grey-7">Total ${frequency.charAt(0).toUpperCase() + frequency.slice(1)} Income: ₱${totalAmount.toLocaleString()}</div>
+      </div>
+
+      <!-- Content -->
+      <div class="dialog-content" style="
+        flex: 1;
+        padding: 20px;
+        padding-bottom: 100px;
+        overflow-y: auto;
+      ">
+        <div class="budget-table">
+          <div class="budget-header" style="
+            display: grid;
+            grid-template-columns: 50% 25% 25%;
+            gap: 10px;
+            padding: 12px;
+            background: #f5f5f5;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-bottom: 10px;
+          ">
+            <div>Category</div>
+            <div style="text-align: right;">Amount (₱)</div>
+            <div style="text-align: right;">Percentage</div>
+          </div>
+          ${categories
+            .map(
+              (category, index) => `
+            <div class="budget-row" style="
+              display: grid;
+              grid-template-columns: 50% 25% 25%;
+              gap: 10px;
+              padding: 12px;
+              border-bottom: 1px solid #eee;
+              background: white;
+              align-items: center;
+            ">
+              <div>
+                ${
+                  category.locked
+                    ? `<div style="color: #1976d2; font-weight: 500; font-size: 16px;">${category.name} (10% - Locked)</div>`
+                    : `<div style="font-weight: 500; font-size: 16px; margin-bottom: 8px;">${category.name}</div>
+                       <input type="number" class="category-amount" data-index="${index}" value="${category.amount}"
+                         placeholder="Enter amount for ${category.name}" style="
+                           width: 100%;
+                           padding: 12px 15px;
+                           border: 2px solid #e0e0e0;
+                           border-radius: 8px;
+                           font-size: 16px;
+                           font-weight: 500;
+                           box-sizing: border-box;
+                           background: #fafafa;
+                           transition: all 0.2s ease;
+                           cursor: pointer;
+                         "
+                         onfocus="this.style.borderColor='#2196f3'; this.style.background='white'; this.style.boxShadow='0 0 0 3px rgba(33, 150, 243, 0.1)'"
+                         onblur="this.style.borderColor='#e0e0e0'; this.style.background='#fafafa'; this.style.boxShadow='none'"
+                         onmouseover="this.style.borderColor='#2196f3'"
+                         onmouseout="this.style.borderColor='#e0e0e0'"
+                         >`
+                }
+              </div>
+              <div style="text-align: right;">
+                ${
+                  category.locked
+                    ? `<span style="font-weight: 500;">₱${Number(category.amount).toLocaleString()}</span>`
+                    : `<span class="amount-display">₱${Number(category.amount).toLocaleString()}</span>`
+                }
+              </div>
+              <div style="text-align: right;">
+                <span class="percent-display">${category.percent.toFixed(1)}%</span>
+              </div>
+            </div>
+          `,
+            )
+            .join('')}
+
+          <!-- Summary Section -->
+          <div class="budget-summary" style="margin-top: 20px;">
+            <div class="budget-total" style="
+              display: grid;
+              grid-template-columns: 50% 25% 25%;
+              gap: 10px;
+              padding: 16px;
+              background: #e3f2fd;
+              border: 2px solid #2196f3;
+              border-radius: 8px;
+              margin-bottom: 10px;
+              align-items: center;
+            ">
+              <div style="font-weight: bold;">Total Allocated:</div>
+              <div style="text-align: right; font-weight: bold;">₱<span id="total-allocated">0</span></div>
+              <div style="text-align: right; font-weight: bold;"><span id="total-percent">0.0</span>%</div>
+            </div>
+            <div class="budget-remaining" style="
+              display: grid;
+              grid-template-columns: 50% 25% 25%;
+              gap: 10px;
+              padding: 16px;
+              background: #fff3e0;
+              border: 2px solid #ff9800;
+              border-radius: 8px;
+              align-items: center;
+            ">
+              <div style="font-weight: bold;">Remaining:</div>
+              <div style="text-align: right; font-weight: bold; color: #ff9800;">₱<span id="remaining-amount">${totalAmount.toLocaleString()}</span></div>
+              <div style="text-align: right; font-weight: bold; color: #ff9800;"><span id="remaining-percent">100.0</span>%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom Action Bar -->
+      <div class="dialog-actions" style="
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        display: flex;
+        gap: 12px;
+        z-index: 10000;
+      ">
+        <button class="cancel-btn" style="
+          padding: 12px 24px;
+          background: #6c757d;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 500;
+        ">Cancel</button>
+        <button class="save-btn" style="
+          padding: 12px 24px;
+          background: #2196f3;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 500;
+        ">Save Budget Allocation</button>
+      </div>
+    </div>
+  `
+
+  // Insert the dialog into the page
+  document.body.insertAdjacentHTML('beforeend', dialogHtml)
+
+  // Add event listeners
+  const cancelBtn = document.querySelector('.cancel-btn')
+  const saveBtn = document.querySelector('.save-btn')
+
+  cancelBtn.addEventListener('click', () => {
+    document.querySelector('.fullscreen-budget-dialog').remove()
+    $q.notify({
+      type: 'info',
+      message: 'Budget allocation cancelled.',
+    })
+  })
+
+  saveBtn.addEventListener('click', () => {
+    const allocationData = {
+      frequency,
+      totalAmount,
+      categories: categories.map((cat) => ({
+        name: cat.name,
+        amount: cat.amount,
+        percent: cat.percent,
+        locked: cat.locked,
+      })),
+    }
+
+    document.querySelector('.fullscreen-budget-dialog').remove()
+
+    $q.notify({
+      type: 'positive',
+      message: `Auto-Budget enabled with ${frequency} frequency!`,
+      caption: `₱${totalAmount.toLocaleString()} allocated across ${categories.length} categories`,
+    })
+
+    console.log('Budget allocation saved:', allocationData)
+  })
+
+  // Add event listeners for amount inputs
+  setTimeout(() => {
+    const amountInputs = document.querySelectorAll('.category-amount')
+    amountInputs.forEach((input) => {
+      input.addEventListener('input', (e) => {
+        const index = parseInt(e.target.dataset.index)
+        const amount = Number(e.target.value) || 0
+        const percent = ((amount / totalAmount) * 100).toFixed(1)
+
+        categories[index].amount = amount
+        categories[index].percent = percent
+
+        // Update displays
+        const row = e.target.closest('.budget-row')
+        const amountDisplay = row.querySelector('.amount-display')
+        const percentDisplay = row.querySelector('.percent-display')
+
+        if (amountDisplay) amountDisplay.textContent = `₱${amount.toLocaleString()}`
+        if (percentDisplay) percentDisplay.textContent = `${percent}%`
+
+        updateTotals()
+      })
+    })
+
+    // Initial calculation
+    updateTotals()
+  }, 100)
+
+  function updateTotals() {
+    const totalAllocated = categories.reduce((sum, cat) => sum + Number(cat.amount), 0)
+    const totalPercent = categories.reduce((sum, cat) => sum + Number(cat.percent), 0)
+    const remaining = totalAmount - totalAllocated
+    const remainingPercent = 100 - totalPercent
+
+    const totalAllocatedEl = document.getElementById('total-allocated')
+    const totalPercentEl = document.getElementById('total-percent')
+    const remainingAmountEl = document.getElementById('remaining-amount')
+    const remainingPercentEl = document.getElementById('remaining-percent')
+
+    if (totalAllocatedEl) totalAllocatedEl.textContent = totalAllocated.toLocaleString()
+    if (totalPercentEl) totalPercentEl.textContent = totalPercent.toFixed(1)
+    if (remainingAmountEl) remainingAmountEl.textContent = Math.max(0, remaining).toLocaleString()
+    if (remainingPercentEl)
+      remainingPercentEl.textContent = Math.max(0, remainingPercent).toFixed(1)
   }
 }
 
