@@ -14,6 +14,12 @@
         label="Add Account"
         @click="showAddDialog = true"
         unelevated
+        :disable="!usersStore.currentUser || !usersStore.currentUser._id"
+        :title="
+          !usersStore.currentUser || !usersStore.currentUser._id
+            ? 'Please log in to add accounts'
+            : 'Add a new account'
+        "
       />
     </div>
 
@@ -25,7 +31,7 @@
         flat
         bordered
         class="q-mb-sm wallet-card clickable-card"
-        :class="{ 'wallet-card-hover': wallet._id !== currentUser?.walletId }"
+        :class="{ 'wallet-card-hover': wallet._id !== usersStore.currentUser?.walletId }"
         @click="editWallet(wallet)"
       >
         <q-card-section>
@@ -56,7 +62,11 @@
         </q-card-section>
 
         <!-- Account Actions -->
-        <q-card-actions v-if="wallet._id !== currentUser?.walletId" align="right" @click.stop>
+        <q-card-actions
+          v-if="wallet._id !== usersStore.currentUser?.walletId"
+          align="right"
+          @click.stop
+        >
           <q-btn flat dense color="grey" icon="edit" label="Edit" @click="editWallet(wallet)" />
           <q-btn
             flat
@@ -73,8 +83,17 @@
     <!-- Empty State -->
     <div v-if="!wallets.length" class="text-grey text-center q-mt-lg">
       <q-icon name="account_balance_wallet" size="64px" class="q-mb-md" />
-      <div class="text-h6 q-mb-sm">No accounts added yet</div>
-      <div class="text-caption">Add your first account to get started!</div>
+      <div v-if="!usersStore.currentUser || !usersStore.currentUser._id" class="text-h6 q-mb-sm">
+        Please log in
+      </div>
+      <div v-else class="text-h6 q-mb-sm">No accounts added yet</div>
+      <div class="text-caption">
+        {{
+          !usersStore.currentUser || !usersStore.currentUser._id
+            ? 'Log in to manage your accounts'
+            : 'Add your first account to get started!'
+        }}
+      </div>
     </div>
 
     <!-- Add/Edit Account Dialog -->
@@ -152,7 +171,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useQuasar } from 'quasar'
 import { useFinancesStore } from 'src/stores/finances'
 import { useUsersStore } from 'src/stores/users'
@@ -164,7 +183,6 @@ const usersStore = useUsersStore()
 
 // State from stores
 const { wallets } = financesStore
-const { currentUser } = usersStore
 
 // Dialog state
 const showAddDialog = ref(false)
@@ -226,9 +244,31 @@ function formatDate(dateString) {
   })
 }
 
+// Helper function to map typeLabel to walletType
+function mapTypeToWalletType(typeLabel) {
+  const typeMap = {
+    Wallet: 'personal',
+    Savings: 'savings',
+    Debt: 'debt',
+    Investment: 'investment',
+    'Credit Card': 'credit',
+    'Bank Account': 'bank',
+  }
+  return typeMap[typeLabel] || 'personal'
+}
+
 async function saveWallet() {
   if (!form.value.name) {
     $q.notify({ type: 'warning', message: 'Please enter an account name' })
+    return
+  }
+
+  // Check if user is logged in
+  if (!usersStore.currentUser || !usersStore.currentUser._id) {
+    $q.notify({
+      type: 'negative',
+      message: 'You must be logged in to manage accounts',
+    })
     return
   }
 
@@ -238,7 +278,10 @@ async function saveWallet() {
       typeLabel: form.value.typeLabel,
       balance: Number(form.value.balance) || 0,
       icon: form.value.icon,
-      ownerUserId: currentUser.value._id,
+      ownerUserId: usersStore.currentUser._id,
+      // Map typeLabel to walletType for compatibility
+      walletType: mapTypeToWalletType(form.value.typeLabel),
+      currency: 'PHP', // Set currency to PHP
     }
 
     if (editingWallet.value) {
@@ -272,8 +315,17 @@ function editWallet(wallet) {
 }
 
 async function deleteWallet(wallet) {
+  // Check if user is logged in
+  if (!usersStore.currentUser || !usersStore.currentUser._id) {
+    $q.notify({
+      type: 'negative',
+      message: 'You must be logged in to manage accounts',
+    })
+    return
+  }
+
   // Don't allow deletion of the main wallet
-  if (wallet._id === currentUser.value?.walletId) {
+  if (wallet._id === usersStore.currentUser?.walletId) {
     $q.notify({
       type: 'warning',
       message: 'Cannot delete your main wallet account',
@@ -303,28 +355,52 @@ function resetForm() {
     typeLabel: 'Wallet',
     balance: 0,
     icon: 'account_balance_wallet',
-    ownerUserId: currentUser.value?._id || '',
+    ownerUserId: usersStore.currentUser?._id || '',
   }
   editingWallet.value = null
 }
 
 // Load data on mount
 onMounted(async () => {
-  // Initialize user if not logged in (for demo purposes)
-  if (!currentUser.value) {
-    // Check if user is authenticated
-    if (!currentUser.value) {
-      console.warn('No user logged in - accounts require authentication')
-      return
-    }
+  // Initialize users store to load current user from localStorage
+  usersStore.initialize()
+
+  // Wait for initialization to complete
+  await new Promise((resolve) => setTimeout(resolve, 200))
+
+  // Check if user is authenticated
+  if (!usersStore.currentUser || !usersStore.currentUser._id) {
+    return
   }
 
   // Load wallets
   await financesStore.loadAll()
 
   // Set owner user ID
-  form.value.ownerUserId = currentUser.value?._id || ''
+  form.value.ownerUserId = usersStore.currentUser._id
 })
+
+// Watch for user changes to handle login after page load
+watch(
+  () => usersStore.currentUser,
+  (newUser) => {
+    if (newUser && newUser._id) {
+      console.log('User logged in after page load, loading wallets...')
+      financesStore.loadAll()
+      form.value.ownerUserId = newUser._id
+    }
+  },
+)
+
+// Watch for wallet changes to refresh the form when needed
+watch(
+  () => wallets.length,
+  (newLength, oldLength) => {
+    if (newLength > oldLength) {
+      form.value.ownerUserId = usersStore.currentUser?._id || ''
+    }
+  },
+)
 </script>
 
 <style scoped>
