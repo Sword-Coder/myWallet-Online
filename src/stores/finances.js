@@ -299,6 +299,34 @@ export const useFinancesStore = defineStore('finances', () => {
     }
   }
 
+  // Delete wallet
+  async function deleteWallet(walletId) {
+    if (!usersStore.currentUser) {
+      throw new Error('No user logged in')
+    }
+
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const wallet = wallets.value.find((w) => w._id === walletId)
+      if (!wallet) {
+        throw new Error('Wallet not found')
+      }
+
+      await deleteDoc(wallet)
+      wallets.value = wallets.value.filter((w) => w._id !== walletId)
+
+      console.log('FinancesStore: Wallet deleted:', wallet.name)
+    } catch (err) {
+      error.value = err.message
+      console.error('FinancesStore: Failed to delete wallet:', err)
+      throw err
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   // Add new transaction
   async function addTransaction(transactionData) {
     if (!usersStore.currentUser) {
@@ -677,6 +705,7 @@ export const useFinancesStore = defineStore('finances', () => {
     debugDatabaseAccess,
     addWallet,
     updateWallet,
+    deleteWallet,
     addTransaction,
     updateTransaction,
     deleteTransaction,
