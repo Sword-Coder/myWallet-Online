@@ -49,7 +49,7 @@ export const useBudgetsStore = defineStore('budgets', () => {
         const updatedBudgets = userData.budgets.map((budget) => {
           const spent = calculateBudgetSpending(
             transactions,
-            budget.categoryId,
+            budget,
             budget.periodStart,
             budget.periodEnd,
           )
@@ -75,7 +75,7 @@ export const useBudgetsStore = defineStore('budgets', () => {
           const updatedBudgets = userBudgets.map((budget) => {
             const spent = calculateBudgetSpending(
               transactions,
-              budget.categoryId,
+              budget,
               budget.periodStart,
               budget.periodEnd,
             )
@@ -346,7 +346,7 @@ export const useBudgetsStore = defineStore('budgets', () => {
       budgets.value = budgets.value.map((budget) => {
         const spent = calculateBudgetSpending(
           transactions,
-          budget.categoryId,
+          budget,
           budget.periodStart,
           budget.periodEnd,
         )
