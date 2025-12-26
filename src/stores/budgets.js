@@ -313,7 +313,12 @@ export const useBudgetsStore = defineStore('budgets', () => {
       })
 
       // Calculate total salary income from all time
-      const totalSalary = salaryTransactions.reduce((sum, t) => sum + t.amount, 0)
+      // For investment income, only use the increase amount (not the full amount)
+      const totalSalary = salaryTransactions.reduce((sum, t) => {
+        // If transaction has investmentIncrease, use that instead of amount
+        const taxableAmount = t.investmentIncrease || t.amount
+        return sum + taxableAmount
+      }, 0)
 
       // Return 10% as expected tithes
       return totalSalary * 0.1
