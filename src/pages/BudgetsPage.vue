@@ -2425,6 +2425,31 @@ watch(
   },
   { deep: true },
 )
+
+// 🔧 ENHANCED: Watch for transactions changes to auto-refresh budgets when transfers happen
+watch(
+  transactions,
+  async (newTransactions, oldTransactions) => {
+    // Check if there are new budget-related transactions
+    if (newTransactions && oldTransactions) {
+      const newBudgetTransactions = newTransactions.filter(
+        (t) => t.isBudgetAllocation || t.isBudgetWithdrawal,
+      )
+
+      const oldBudgetTransactions = oldTransactions.filter(
+        (t) => t.isBudgetAllocation || t.isBudgetWithdrawal,
+      )
+
+      // If there are new budget transactions, refresh budgets
+      if (newBudgetTransactions.length > oldBudgetTransactions.length) {
+        console.log('🔄 New budget transaction detected, refreshing budgets...')
+        await budgetsStore.refreshBudgetSpent()
+        await budgetsStore.loadBudgets() // Full refresh to update amounts
+      }
+    }
+  },
+  { deep: true },
+)
 </script>
 
 <style scoped>
