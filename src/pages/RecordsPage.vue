@@ -50,7 +50,7 @@
             >
               ₱{{ netTotal.toLocaleString() }}
             </div>
-            <div class="text-caption text-grey">Total</div>
+            <div class="text-caption text-grey">Available</div>
           </q-card>
         </div>
       </div>
@@ -84,6 +84,18 @@
           </q-card>
         </div>
       </div>
+
+      <!-- Row 3: Budget Summary -->
+      <div class="summary-row">
+        <div class="summary-col">
+          <q-card flat bordered class="text-center q-pa-md summary-card">
+            <div class="text-h6 text-weight-bold budget-text">
+              ₱{{ budgetTotal.toLocaleString() }}
+            </div>
+            <div class="text-caption text-grey">Budget</div>
+          </q-card>
+        </div>
+      </div>
     </div>
 
     <!-- Recent Transactions -->
@@ -99,31 +111,22 @@
           @click="openEditDialog(transaction)"
         >
           <q-item-section avatar>
-            <q-avatar
-              :color="transaction.kind === 'income' ? 'positive' : 'negative'"
-              text-color="white"
-              size="sm"
-            >
-              {{ transaction.kind === 'income' ? '↑' : '↓' }}
+            <q-avatar :color="getTransactionColor(transaction)" text-color="white" size="sm">
+              {{ getTransactionIcon(transaction) }}
             </q-avatar>
           </q-item-section>
 
           <q-item-section>
             <q-item-label class="text-weight-medium">{{
-              getCategoryName(transaction.categoryId)
+              getCategoryName(transaction.categoryId, transaction)
             }}</q-item-label>
             <q-item-label caption>{{ formatDateTime(transaction.datetime) }}</q-item-label>
             <q-item-label caption v-if="transaction.notes">{{ transaction.notes }}</q-item-label>
           </q-item-section>
 
           <q-item-section side>
-            <div
-              class="text-subtitle2 text-weight-bold"
-              :class="transaction.kind === 'income' ? 'income-text' : 'expense-text'"
-            >
-              {{ transaction.kind === 'income' ? '+' : '-' }}₱{{
-                transaction.amount.toLocaleString()
-              }}
+            <div class="text-subtitle2 text-weight-bold" :class="getAmountColor(transaction)">
+              {{ getAmountDisplay(transaction) }}
             </div>
           </q-item-section>
         </q-item>
@@ -350,6 +353,25 @@ const { currentUser } = storeToRefs(usersStore)
 const totals = computed(() => financesStore.totals)
 const spiritualGiving = computed(() => financesStore.spiritualGiving)
 
+// 🔧 NEW: Calculate available amount for Records page (after budgets)
+const availableAmount = computed(() => {
+  const allTransactions = financesStore.transactions
+
+  const income = allTransactions
+    .filter((t) => t.kind === 'income')
+    .reduce((sum, t) => sum + t.amount, 0)
+
+  const expenses = allTransactions
+    .filter((t) => t.kind === 'expense')
+    .reduce((sum, t) => sum + t.amount, 0)
+
+  const budgetAllocations = allTransactions
+    .filter((t) => t.isBudgetAllocation === true)
+    .reduce((sum, t) => sum + t.amount, 0)
+
+  return income - expenses - budgetAllocations
+})
+
 // Dialog state
 const showTransactionDialog = ref(false)
 const selectedTransaction = ref(null)
@@ -404,12 +426,126 @@ const recentTransactions = computed(() => financesStore.getRecentTransactions(10
 // Current month totals
 const incomeTotal = computed(() => totals.value.income)
 const expenseTotal = computed(() => totals.value.expenses)
-const netTotal = computed(() => totals.value.net)
+// 🔧 CHANGED: Show available amount (after budgets) instead of gross net
+const netTotal = computed(() => availableAmount.value)
+
+// 🔧 FIXED: Calculate total budget allocations with debugging
+const budgetTotal = computed(() => {
+  console.log('=== BUDGET TOTAL CALCULATION ===')
+  console.log('All transactions:', transactions.value?.length || 0)
+  console.log('Sample transaction:', transactions.value?.[0])
+
+  const currentMonth = new Date()
+  const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1)
+  const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0, 23, 59, 59)
+
+  console.log('Month range:', {
+    monthStart: monthStart.toISOString(),
+    monthEnd: monthEnd.toISOString(),
+  })
+
+  const budgetTransactions = (transactions.value || []).filter((t) => {
+    const transactionDate = new Date(t.datetime)
+    const isBudgetAllocation = t.isBudgetAllocation === true
+    const isInCurrentMonth = transactionDate >= monthStart && transactionDate <= monthEnd
+
+    console.log('Transaction check:', {
+      id: t._id,
+      datetime: t.datetime,
+      amount: t.amount,
+      isBudgetAllocation: t.isBudgetAllocation,
+      isInCurrentMonth,
+      matches: isBudgetAllocation && isInCurrentMonth,
+    })
+
+    return isBudgetAllocation && isInCurrentMonth
+  })
+
+  console.log('Budget allocation transactions found:', budgetTransactions.length)
+  console.log('Budget transactions:', budgetTransactions)
+
+  const total = budgetTransactions.reduce((sum, t) => sum + Number(t.amount || 0), 0)
+  console.log('Budget total calculated:', total)
+
+  return total
+})
 
 // Helper functions
-function getCategoryName(categoryId) {
+function getCategoryName(categoryId, transaction = null) {
+  // 🔧 FIXED: For budget allocation transactions, show the actual budget category name with "Budget" suffix
+  if (transaction && transaction.isBudgetAllocation && transaction.budgetId) {
+    // Find the budget to get the actual category
+    const budget = budgetsStore.budgets.find((b) => b._id === transaction.budgetId)
+    if (budget) {
+      const category = (categories.value || []).find((c) => c._id === budget.categoryId)
+      return category ? `${category.name} Budget` : 'Budget'
+    }
+  }
+
   const category = (categories.value || []).find((c) => c._id === categoryId)
   return category ? category.name : 'Uncategorized'
+}
+
+function getTransactionIcon(transaction) {
+  if (transaction.isBudgetAllocation) {
+    return '⇄' // Budget allocation icon
+  }
+
+  if (transaction.kind === 'income') {
+    return '↑'
+  } else if (transaction.kind === 'expense') {
+    return '↓'
+  } else if (transaction.kind === 'transfer') {
+    return '⇄' // Transfer icon
+  }
+  return '?'
+}
+
+function getTransactionColor(transaction) {
+  if (transaction.isBudgetAllocation) {
+    return 'info' // Blue for budget allocations
+  }
+
+  if (transaction.kind === 'income') {
+    return 'positive'
+  } else if (transaction.kind === 'expense') {
+    return 'negative'
+  } else if (transaction.kind === 'transfer') {
+    return 'info'
+  }
+  return 'grey'
+}
+
+function getAmountDisplay(transaction) {
+  const amount = transaction.amount.toLocaleString()
+
+  if (transaction.isBudgetAllocation) {
+    return `₱${amount}` // Budget allocations show without +/- sign
+  }
+
+  if (transaction.kind === 'income') {
+    return `+₱${amount}`
+  } else if (transaction.kind === 'expense') {
+    return `-₱${amount}`
+  } else if (transaction.kind === 'transfer') {
+    return `₱${amount}` // Transfers show without +/- sign
+  }
+  return `₱${amount}`
+}
+
+function getAmountColor(transaction) {
+  if (transaction.isBudgetAllocation) {
+    return 'budget-text'
+  }
+
+  if (transaction.kind === 'income') {
+    return 'income-text'
+  } else if (transaction.kind === 'expense') {
+    return 'expense-text'
+  } else if (transaction.kind === 'transfer') {
+    return 'budget-text'
+  }
+  return 'text-grey'
 }
 
 function formatDateTime(datetime) {
@@ -859,6 +995,10 @@ onMounted(async () => {
 
 .faith-promise-text {
   color: #6f42c1 !important;
+}
+
+.budget-text {
+  color: #2196f3 !important;
 }
 
 .net-text {
