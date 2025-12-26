@@ -86,6 +86,11 @@ export function createTransactionDocument(transactionData) {
     tags: transactionData.tags || [],
     splitPayment: transactionData.splitPayment || { isSplit: false, splitDetails: {} },
 
+    // 🔧 FIXED: Include budget-related fields
+    budgetId: transactionData.budgetId,
+    isBudgetAllocation: transactionData.isBudgetAllocation || false,
+    isTransfer: transactionData.isTransfer || false,
+
     // Timestamps
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
