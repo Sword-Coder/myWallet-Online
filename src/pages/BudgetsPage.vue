@@ -37,6 +37,20 @@
         label="Debug Info"
         @click="showDebugInfo = !showDebugInfo"
       />
+      <q-btn
+        color="orange"
+        icon="build"
+        label="Fix Existing Transactions"
+        @click="fixExistingTransactions"
+        v-if="hasOldBudgetTransactions"
+      />
+      <q-btn
+        color="negative"
+        icon="delete"
+        label="Delete All Budgets"
+        @click="deleteAllBudgets"
+        v-if="budgets.length > 0"
+      />
     </div>
 
     <!-- Budget Status Indicators -->
@@ -79,6 +93,34 @@
           Is Loading: {{ budgetsStore.isLoading ? 'Yes' : 'No' }}<br />
           Has Error: {{ budgetsStore.error ? 'Yes' : 'No' }}<br />
           Error Message: {{ budgetsStore.error || 'None' }}<br />
+          <br />
+          <strong>Undelegated Amount Debug:</strong><br />
+          Wallet Balance: ₱{{ wallets?.find((w) => w._id === selectedWallet)?.balance || 'N/A'
+          }}<br />
+          Budgets Count: {{ budgets?.length || 0 }}<br />
+          Transactions Count: {{ transactions?.length || 0 }}<br />
+          Calculated Undelegated: ₱{{ undelegatedAmount }}<br />
+          <br />
+          <strong>Budgets Being Counted:</strong><br />
+          <div
+            v-for="budget in budgets"
+            :key="budget._id"
+            style="margin: 4px 0; padding: 4px; background: #f5f5f5; border-radius: 4px"
+          >
+            <strong>{{ getCategoryName(budget.categoryId) }}</strong
+            >: ₱{{ budget.amount }}<br />
+            <small>ID: {{ budget._id.substring(0, 8) }}...</small>
+            <div v-if="budget.amount > 0">
+              <small
+                >Has Allocation:
+                {{
+                  transactions?.some((t) => t.budgetId === budget._id && t.isBudgetAllocation)
+                    ? 'Yes'
+                    : 'No'
+                }}</small
+              >
+            </div>
+          </div>
           <br />
           <strong>Sample Budget Data:</strong><br />
           <pre>{{ JSON.stringify(budgets?.[0], null, 2) }}</pre>
@@ -203,6 +245,68 @@
             @blur="handleCategoryInput"
           />
 
+          <!-- Undelegated Amount Display -->
+          <div
+            class="undelegated-amount-display q-pa-sm rounded-borders"
+            :style="{
+              background:
+                undelegatedAmount === 0
+                  ? '#ffebee'
+                  : undelegatedAmount < 1000
+                    ? '#fff3e0'
+                    : '#e3f2fd',
+              borderColor:
+                undelegatedAmount === 0
+                  ? '#f44336'
+                  : undelegatedAmount < 1000
+                    ? '#ff9800'
+                    : '#2196f3',
+            }"
+          >
+            <div
+              class="text-subtitle2 text-weight-medium"
+              :class="
+                undelegatedAmount === 0
+                  ? 'text-negative'
+                  : undelegatedAmount < 1000
+                    ? 'text-orange-8'
+                    : 'text-primary'
+              "
+            >
+              Current Total in Wallet Undelegated:
+            </div>
+            <div
+              class="text-h6 text-weight-bold"
+              :class="
+                undelegatedAmount === 0
+                  ? 'text-negative'
+                  : undelegatedAmount < 1000
+                    ? 'text-orange-8'
+                    : 'text-primary'
+              "
+            >
+              ₱{{ Number(undelegatedAmount).toLocaleString() }}
+            </div>
+            <div
+              class="text-caption"
+              :class="
+                undelegatedAmount === 0
+                  ? 'text-negative'
+                  : undelegatedAmount < 1000
+                    ? 'text-orange-7'
+                    : 'text-grey-7'
+              "
+            >
+              <template v-if="undelegatedAmount === 0">
+                ⚠️ No funds available for new budgets
+              </template>
+              <template v-else-if="undelegatedAmount < 1000">
+                ⚠️ Low funds - budget carefully
+              </template>
+              <template v-else> Available amount not yet allocated to budgets </template>
+            </div>
+          </div>
+
           <!-- Budget Type -->
           <q-option-group
             v-model="form.budgetType"
@@ -222,6 +326,15 @@
             label="Amount (PHP)"
             type="number"
             min="0"
+            :max="undelegatedAmount"
+            :hint="`Max available: ₱${Number(undelegatedAmount).toLocaleString()}`"
+            :rules="[
+              (val) => val > 0 || 'Amount must be greater than 0',
+              (val) =>
+                val <= undelegatedAmount ||
+                `Cannot exceed ₱${Number(undelegatedAmount).toLocaleString()}`,
+            ]"
+            @update:model-value="validateBudgetAmount"
           />
 
           <q-input
@@ -264,7 +377,7 @@ const usersStore = useUsersStore()
 const authStore = useAuthStore()
 
 // 🔧 FIXED: Use storeToRefs for ALL stores (like Analysis page) for consistent reactivity
-const { wallets } = storeToRefs(financesStore)
+const { wallets, transactions } = storeToRefs(financesStore)
 const { budgets } = storeToRefs(budgetsStore)
 const { categories } = storeToRefs(categoriesStore) // 🔧 FIXED: Using storeToRefs for categories too!
 const addCategory = categoriesStore.addCategory // Keep method reference
@@ -297,6 +410,94 @@ const walletOptions = computed(() =>
   (wallets.value || []).map((w) => ({ label: w.name, value: w._id })),
 )
 
+// 🔧 FIXED: Add undelegated amount computation with debugging
+const undelegatedAmount = computed(() => {
+  console.log('=== UNDELEGATED AMOUNT CALCULATION ===')
+
+  if (!selectedWallet.value || !wallets.value) {
+    console.log('No wallet selected or wallets not loaded')
+    return 0
+  }
+
+  // Find the selected wallet
+  const selectedWalletData = wallets.value.find((w) => w._id === selectedWallet.value)
+  if (!selectedWalletData) {
+    console.log('Selected wallet not found')
+    return 0
+  }
+
+  // Get wallet balance (convert to number if it's a string)
+  const walletBalance = Number(selectedWalletData.balance || 0)
+  console.log('Wallet balance:', walletBalance)
+
+  // Calculate total budgeted amounts for the current month
+  const currentDate = new Date()
+  const currentMonthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)
+  const currentMonthEnd = new Date(
+    currentDate.getFullYear(),
+    currentDate.getMonth() + 1,
+    0,
+    23,
+    59,
+    59,
+  )
+
+  console.log('Month range for undelegated:', {
+    start: currentMonthStart.toISOString(),
+    end: currentMonthEnd.toISOString(),
+  })
+
+  const currentMonthBudgets = (budgets.value || []).filter((budget) => {
+    // Only count budgets in the current month
+    const budgetStart = new Date(budget.periodStart)
+    const budgetEnd = new Date(budget.periodEnd)
+    return budgetStart <= currentMonthEnd && budgetEnd >= currentMonthStart
+  })
+
+  console.log('Current month budgets:', currentMonthBudgets.length)
+
+  const totalBudgetedAmount = currentMonthBudgets.reduce((total, budget) => {
+    console.log('Checking budget:', {
+      id: budget._id,
+      amount: budget.amount,
+      categoryId: budget.categoryId,
+    })
+
+    // For fixed amounts, only count if there's a corresponding allocation transaction
+    if (budget.amount > 0) {
+      // Check if there's an allocation transaction for this budget
+      const hasAllocationTransaction = (transactions.value || []).some(
+        (t) => t.budgetId === budget._id && t.isBudgetAllocation === true,
+      )
+
+      console.log('Budget allocation check:', {
+        budgetId: budget._id,
+        hasAllocationTransaction,
+        amount: budget.amount,
+      })
+
+      if (hasAllocationTransaction) {
+        console.log('Adding budget amount to total:', budget.amount)
+        return total + Number(budget.amount)
+      }
+      // If no allocation transaction exists, don't count this budget
+      console.log('No allocation transaction found, not counting budget')
+      return total
+    }
+    // For percentage budgets, we can't calculate exact amount without income data
+    // So we'll just add 0 for now (this could be enhanced later)
+    return total
+  }, 0)
+
+  console.log('Total budgeted amount:', totalBudgetedAmount)
+
+  const undelegated = walletBalance - totalBudgetedAmount
+  const result = Math.max(0, undelegated) // Ensure it doesn't go negative
+
+  console.log('Final undelegated amount:', result)
+  return result
+})
+
 // 🔧 FIXED: Simplified filteredBudgets computed (like Analysis page)
 const filteredBudgets = computed(() => {
   console.log('🔍 BudgetsPage: filteredBudgets computed called:', {
@@ -309,6 +510,19 @@ const filteredBudgets = computed(() => {
   console.log('✅ BudgetsPage: filteredBudgets result:', result.length, 'budgets')
 
   return result
+})
+
+// 🔧 FIXED: Check if there are old budget transactions that need fixing
+const hasOldBudgetTransactions = computed(() => {
+  if (!transactions.value || !budgets.value) return false
+
+  return transactions.value.some(
+    (t) =>
+      t.kind === 'transfer' &&
+      t.notes &&
+      t.notes.includes('Budget allocation') &&
+      !t.isBudgetAllocation,
+  )
 })
 
 // 🔧 FIXED: Enhanced getCategoryName function with better debugging
@@ -379,7 +593,9 @@ async function confirmDeleteBudget(budget) {
     },
   }).onOk(async () => {
     try {
-      $q.loading.show({ message: 'Deleting budget...' })
+      if ($q && $q.loading) {
+        $q.loading.show({ message: 'Deleting budget...' })
+      }
 
       await budgetsStore.deleteBudget(budget._id)
 
@@ -400,7 +616,9 @@ async function confirmDeleteBudget(budget) {
         timeout: 5000,
       })
     } finally {
-      $q.loading.hide()
+      if ($q && $q.loading) {
+        $q.loading.hide()
+      }
     }
   })
 }
@@ -1581,6 +1799,17 @@ async function saveBudget() {
         })
         return
       }
+
+      // 🔧 FIXED: Prevent budget amount from exceeding undelegated amount
+      if (form.value.amount > undelegatedAmount.value) {
+        $q.notify({
+          type: 'negative',
+          message: `Budget amount exceeds available funds`,
+          caption: `Available: ₱${Number(undelegatedAmount.value).toLocaleString()} | Requested: ₱${Number(form.value.amount).toLocaleString()}`,
+          timeout: 5000,
+        })
+        return
+      }
     } else if (form.value.budgetType === 'percentage') {
       if (!form.value.percent || form.value.percent <= 0 || form.value.percent > 100) {
         $q.notify({
@@ -1589,6 +1818,17 @@ async function saveBudget() {
           timeout: 3000,
         })
         return
+      }
+
+      // 🔧 FIXED: Add warning for percentage budgets (since we can't calculate exact amount without income)
+      if (undelegatedAmount.value <= 0) {
+        $q.notify({
+          type: 'warning',
+          message: 'No undelegated funds available for percentage budget',
+          caption: 'Consider creating a fixed amount budget instead or add funds to your wallet',
+          timeout: 4000,
+        })
+        // Don't return here, just warn - percentage budgets might be intended for future income
       }
     }
 
@@ -1694,6 +1934,12 @@ async function saveBudget() {
       }
 
       console.log('Budget saved successfully:', savedBudget._id)
+
+      // 🔧 FIXED: Create budget allocation transaction for fixed amount budgets
+      if (form.value.budgetType === 'fixed' && form.value.amount > 0) {
+        await createBudgetAllocationTransaction(savedBudget._id, form.value.amount, categoryName)
+      }
+
       $q.notify({
         type: 'positive',
         message: 'Budget added successfully!',
@@ -1763,6 +2009,363 @@ function resetForm() {
   editingBudget.value = null
 }
 
+// 🔧 FIXED: Create budget allocation transaction with enhanced debugging
+async function createBudgetAllocationTransaction(budgetId, amount, categoryName) {
+  try {
+    console.log('=== BUDGET ALLOCATION TRANSACTION START ===')
+
+    const userId = authStore.user?._id
+    console.log('Step 1: User check', { userId, walletId: selectedWallet.value })
+
+    if (!userId || !selectedWallet.value) {
+      console.error('Missing user or wallet:', { userId, walletId: selectedWallet.value })
+      $q.notify({
+        type: 'negative',
+        message: 'Cannot create budget allocation: Missing user or wallet',
+        timeout: 3000,
+      })
+      return
+    }
+
+    // Find or create "Budgeted" category
+    let budgetedCategory = null
+    console.log('Step 2: Looking for Budgeted category')
+
+    try {
+      const categoriesArray = Array.isArray(categories.value) ? categories.value : []
+      console.log(
+        'Available categories:',
+        categoriesArray.map((c) => c.name),
+      )
+
+      budgetedCategory = categoriesArray.find((c) => c.name.toLowerCase() === 'budgeted')
+
+      if (!budgetedCategory) {
+        console.log('Step 3: Budgeted category not found, creating new one')
+
+        // Create "Budgeted" category if it doesn't exist
+        budgetedCategory = await categoriesStore.addCategory({
+          name: 'Budgeted',
+          kind: 'transfer', // Use transfer type for budget allocations
+          icon: 'account_balance_wallet',
+          color: 'blue-5',
+          description: 'Budget allocations and transfers',
+          isShared: true,
+        })
+
+        console.log('Budgeted category creation result:', budgetedCategory)
+
+        if (budgetedCategory) {
+          console.log('Step 4: Reloading categories after creation')
+          // Reload categories to include the new one
+          await categoriesStore.loadCategories()
+
+          // Wait for categories to update
+          await new Promise((resolve) => setTimeout(resolve, 300))
+
+          // Get updated categories
+          const updatedCategories = Array.isArray(categories.value) ? categories.value : []
+          budgetedCategory = updatedCategories.find((c) => c.name.toLowerCase() === 'budgeted')
+          console.log('Updated budgeted category:', budgetedCategory)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to find/create Budgeted category:', error)
+      throw new Error(`Category creation failed: ${error.message}`)
+    }
+
+    if (!budgetedCategory) {
+      console.error('Could not find or create Budgeted category after all attempts')
+      throw new Error('Budgeted category is not available')
+    }
+
+    console.log('Step 5: Using budgeted category:', budgetedCategory._id, budgetedCategory.name)
+
+    // Prepare transaction data
+    const transactionData = {
+      walletId: selectedWallet.value,
+      kind: 'transfer', // Use transfer kind
+      amount: Number(amount),
+      categoryId: budgetedCategory._id,
+      notes: `Delegated some money for ${categoryName}.`,
+      datetime: new Date().toISOString(),
+      budgetId: budgetId, // Link back to the budget
+      isBudgetAllocation: true, // Flag to identify this as a budget allocation
+      isTransfer: true, // Mark as transfer
+    }
+
+    console.log('Step 6: Transaction data prepared:', transactionData)
+
+    // Use the proper transaction creation method
+    console.log('Step 7: Creating transaction via financesStore.addTransaction')
+    console.log('Step 7a: Full transaction data being sent:', transactionData)
+    const savedTransaction = await financesStore.addTransaction(transactionData)
+
+    console.log('Step 8: Transaction created successfully:', savedTransaction._id)
+
+    // Refresh data to reflect changes
+    console.log('Step 9: Refreshing data')
+    await Promise.all([financesStore.loadAll(), budgetsStore.loadBudgets()])
+
+    // Show success notification
+    $q.notify({
+      type: 'positive',
+      message: `Budget allocation of ₱${Number(amount).toLocaleString()} created for ${categoryName}`,
+      timeout: 3000,
+    })
+
+    console.log('=== BUDGET ALLOCATION TRANSACTION COMPLETED SUCCESSFULLY ===')
+  } catch (error) {
+    console.error('=== BUDGET ALLOCATION TRANSACTION FAILED ===')
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    })
+
+    // Show detailed error notification
+    $q.notify({
+      type: 'negative',
+      message: 'Budget allocation transaction failed',
+      caption: error.message || 'Unknown error occurred',
+      timeout: 5000,
+      actions: [
+        {
+          label: 'Retry',
+          color: 'white',
+          handler: () => {
+            createBudgetAllocationTransaction(budgetId, amount, categoryName)
+          },
+        },
+      ],
+    })
+  }
+}
+
+// 🔧 FIXED: Real-time validation for budget amount
+function validateBudgetAmount(value) {
+  if (form.value.budgetType === 'fixed' && value > undelegatedAmount.value) {
+    // Show warning notification for real-time feedback
+    $q.notify({
+      type: 'warning',
+      message: `Amount exceeds available funds`,
+      caption: `Max allowed: ₱${Number(undelegatedAmount.value).toLocaleString()}`,
+      timeout: 2000,
+      actions: [
+        {
+          label: 'Set to Max',
+          color: 'white',
+          handler: () => {
+            form.value.amount = undelegatedAmount.value
+          },
+        },
+      ],
+    })
+  }
+}
+
+// 🔧 FIXED: Delete all budgets to restore balance
+async function deleteAllBudgets() {
+  if (!budgets.value || budgets.value.length === 0) {
+    $q.notify({
+      type: 'info',
+      message: 'No budgets to delete',
+    })
+    return
+  }
+
+  const budgetNames = budgets.value
+    .map((b) => {
+      const category = categories.value?.find((c) => c._id === b.categoryId)
+      return category ? category.name : 'Unknown Category'
+    })
+    .join(', ')
+
+  $q.dialog({
+    title: 'Delete All Budgets?',
+    message: `This will delete ${budgets.value.length} budget(s): ${budgetNames}\n\nThis action cannot be undone. Your undelegated amount should return to your full wallet balance.`,
+    cancel: true,
+    persistent: true,
+    color: 'negative',
+    ok: {
+      label: 'Delete All',
+      color: 'negative',
+    },
+  }).onOk(async () => {
+    try {
+      $q.loading.show({ message: 'Deleting all budgets...' })
+
+      // Delete each budget
+      for (const budget of budgets.value) {
+        await budgetsStore.deleteBudget(budget._id)
+      }
+
+      // Refresh data
+      await Promise.all([budgetsStore.loadBudgets(), financesStore.loadAll()])
+
+      $q.notify({
+        type: 'positive',
+        message: `Deleted ${budgets.value.length} budget(s)! Your balance should now be restored.`,
+      })
+
+      console.log('✅ All budgets deleted. Current budgets:', budgets.value.length)
+    } catch (error) {
+      console.error('Failed to delete budgets:', error)
+      $q.notify({
+        type: 'negative',
+        message: 'Failed to delete budgets',
+        caption: error.message || 'Unknown error occurred',
+        timeout: 5000,
+      })
+    } finally {
+      $q.loading.hide()
+    }
+  })
+}
+
+// 🔧 FIXED: Fix existing budget transactions that were created before the fix
+async function fixExistingTransactions() {
+  try {
+    console.log('🔧 Starting fix for existing budget transactions...')
+
+    if ($q && $q.loading) {
+      $q.loading.show({ message: 'Fixing existing transactions...' })
+    }
+
+    const allBudgets = budgets.value || []
+    const allTransactions = transactions.value || []
+
+    console.log('📊 Found budgets:', allBudgets.length)
+    console.log('💰 Found transactions:', allTransactions.length)
+
+    // Find transactions that are transfers with "Budget allocation" in notes but missing isBudgetAllocation flag
+    const budgetAllocationTransactions = allTransactions.filter(
+      (t) =>
+        t.kind === 'transfer' &&
+        t.notes &&
+        t.notes.includes('Budget allocation') &&
+        !t.isBudgetAllocation,
+    )
+
+    console.log(
+      '🎯 Found budget allocation transactions needing fix:',
+      budgetAllocationTransactions.length,
+    )
+
+    let fixedCount = 0
+
+    for (const transaction of budgetAllocationTransactions) {
+      try {
+        // Find the budget that matches this transaction
+        const matchingBudget = allBudgets.find((budget) => {
+          // Check if transaction amount matches budget amount
+          return (
+            Math.abs(transaction.amount - budget.amount) < 0.01 &&
+            // Check if transaction is in the budget period
+            new Date(transaction.datetime) >= new Date(budget.periodStart) &&
+            new Date(transaction.datetime) <= new Date(budget.periodEnd)
+          )
+        })
+
+        if (matchingBudget) {
+          console.log(`🔧 Fixing transaction ${transaction._id} for budget ${matchingBudget._id}`)
+
+          // Update the transaction with the missing flags
+          await financesStore.updateTransaction(transaction._id, {
+            budgetId: matchingBudget._id,
+            isBudgetAllocation: true,
+            isTransfer: true,
+          })
+
+          fixedCount++
+          console.log(`✅ Fixed transaction ${transaction._id}`)
+        } else {
+          console.log(`⚠️ Could not find matching budget for transaction ${transaction._id}`)
+        }
+      } catch (error) {
+        console.error(`❌ Failed to fix transaction ${transaction._id}:`, error)
+      }
+    }
+
+    console.log(`🎉 Fix completed! Updated ${fixedCount} transactions`)
+
+    // Refresh data
+    await Promise.all([financesStore.loadAll(), budgetsStore.loadBudgets()])
+
+    console.log('✅ Data refreshed after fix')
+
+    // Show success notification
+    if (fixedCount > 0) {
+      $q.notify({
+        type: 'positive',
+        message: `Fixed ${fixedCount} existing budget transactions!`,
+        timeout: 3000,
+      })
+    } else {
+      $q.notify({
+        type: 'info',
+        message: 'No existing transactions needed fixing',
+        timeout: 2000,
+      })
+    }
+  } catch (error) {
+    console.error('❌ Fix failed:', error)
+    $q.notify({
+      type: 'negative',
+      message: 'Failed to fix existing transactions',
+      caption: error.message,
+      timeout: 5000,
+    })
+  } finally {
+    if ($q && $q.loading) {
+      $q.loading.hide()
+    }
+  }
+}
+
+// Ensure Budgeted category exists for budget allocations
+async function ensureBudgetedCategory() {
+  try {
+    console.log('Checking if Budgeted category exists...')
+
+    // Ensure categories are loaded
+    if (!categories.value || !Array.isArray(categories.value)) {
+      console.log('Categories not loaded, loading them first...')
+      await categoriesStore.loadCategories()
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    }
+
+    const categoriesArray = Array.isArray(categories.value) ? categories.value : []
+    const existingBudgetedCategory = categoriesArray.find(
+      (c) => c.name.toLowerCase() === 'budgeted',
+    )
+
+    if (!existingBudgetedCategory) {
+      console.log('Budgeted category not found, creating it...')
+
+      const newBudgetedCategory = await categoriesStore.addCategory({
+        name: 'Budgeted',
+        kind: 'transfer',
+        icon: 'account_balance_wallet',
+        color: 'blue-5',
+        description: 'Budget allocations and transfers',
+        isShared: true,
+      })
+
+      if (newBudgetedCategory) {
+        console.log('Budgeted category created successfully:', newBudgetedCategory._id)
+        // Reload categories to include the new one
+        await categoriesStore.loadCategories()
+      }
+    } else {
+      console.log('Budgeted category already exists:', existingBudgetedCategory._id)
+    }
+  } catch (error) {
+    console.error('Failed to ensure Budgeted category exists:', error)
+    // Don't throw - this is not critical for app functionality
+  }
+}
+
 // Load data on mount
 onMounted(async () => {
   console.log('BudgetsPage: Component mounted, initializing...')
@@ -1785,6 +2388,9 @@ onMounted(async () => {
     categoriesStore.loadCategories(), // Load categories first
     budgetsStore.loadBudgets(), // Then load budgets
   ])
+
+  // Ensure Budgeted category exists for budget allocations
+  await ensureBudgetedCategory()
 
   // Load expected tithes
   await loadExpectedTithes()
@@ -1813,7 +2419,7 @@ watch(
 
 // Watch for budget and category changes to refresh expected tithes
 watch(
-  [budgets, categories],
+  [budgets, categories, transactions],
   async () => {
     await loadExpectedTithes()
   },
@@ -1840,5 +2446,15 @@ watch(
 .fade-slide-up-leave-to {
   opacity: 0;
   transform: translateY(-10px);
+}
+
+/* Undelegated Amount Display */
+.undelegated-amount-display {
+  transition: all 0.2s ease;
+}
+
+.undelegated-amount-display:hover {
+  background: #bbdefb !important;
+  border-color: #1976d2 !important;
 }
 </style>
