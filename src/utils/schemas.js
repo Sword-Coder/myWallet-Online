@@ -70,7 +70,17 @@ export const schemas = {
 
   transaction: {
     required: ['_id', 'type', 'walletId', 'userId', 'kind', 'amount', 'categoryId', 'datetime'],
-    optional: ['notes', 'tags', 'splitPayment', 'createdAt', 'updatedAt'],
+    optional: [
+      'notes',
+      'tags',
+      'splitPayment',
+      'createdAt',
+      'updatedAt',
+      // 🔧 FIXED: Include budget-related fields
+      'budgetId',
+      'isBudgetAllocation',
+      'isTransfer',
+    ],
     type: 'transaction',
   },
 
