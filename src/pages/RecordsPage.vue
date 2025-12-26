@@ -272,7 +272,11 @@
 
           <!-- Transfer Help Text -->
           <q-banner
-            v-if="form.kind === 'transfer' && !transferFromBudget && categoryOptions.length === 0"
+            v-if="
+              form?.value?.kind === 'transfer' &&
+              !transferFromBudget &&
+              categoryOptions.length === 0
+            "
             class="q-mb-md"
             dense
             rounded
@@ -287,7 +291,9 @@
           </q-banner>
 
           <q-banner
-            v-if="form.kind === 'transfer' && !transferFromBudget && categoryOptions.length > 0"
+            v-if="
+              form?.value?.kind === 'transfer' && !transferFromBudget && categoryOptions.length > 0
+            "
             class="q-mb-md"
             dense
             rounded
@@ -303,7 +309,9 @@
 
           <q-banner
             v-if="
-              form.kind === 'transfer' && transferFromBudget && budgetWalletOptions.length === 0
+              form?.value?.kind === 'transfer' &&
+              transferFromBudget &&
+              budgetWalletOptions.length === 0
             "
             class="q-mb-md"
             dense
@@ -319,7 +327,11 @@
           </q-banner>
 
           <q-banner
-            v-if="form.kind === 'transfer' && transferFromBudget && budgetWalletOptions.length > 0"
+            v-if="
+              form?.value?.kind === 'transfer' &&
+              transferFromBudget &&
+              budgetWalletOptions.length > 0
+            "
             class="q-mb-md"
             dense
             rounded
@@ -343,6 +355,89 @@
               rows="2"
               placeholder="Add a note..."
             />
+          </div>
+
+          <!-- Investment Income Section -->
+          <div v-if="form.kind === 'income'" class="q-mb-lg">
+            <q-card flat bordered class="investment-income-card">
+              <q-card-section class="q-pa-md">
+                <div class="text-subtitle2 text-weight-medium q-mb-sm">
+                  <q-icon name="trending_up" class="q-mr-sm" />
+                  Investment Income
+                </div>
+                <div class="text-caption text-grey-7 q-mb-md">
+                  For investment returns, only the gain is subject to tithes
+                </div>
+
+                <q-option-group
+                  v-model="isInvestmentIncome"
+                  :options="[
+                    { label: 'Regular Income', value: false },
+                    { label: 'Investment Income', value: true },
+                  ]"
+                  color="primary"
+                  type="radio"
+                  class="q-mb-md"
+                />
+
+                <!-- Investment Details (shown when Investment Income is selected) -->
+                <div v-if="isInvestmentIncome" class="q-mt-md">
+                  <q-input
+                    v-model="investmentAmount"
+                    label="How much did you invest?"
+                    filled
+                    type="number"
+                    prefix="₱"
+                    min="0"
+                    step="0.01"
+                    placeholder="Enter investment amount"
+                    class="q-mb-md"
+                    :rules="[
+                      (val) => !val || parseFloat(val) >= 0 || 'Investment amount must be positive',
+                      (val) =>
+                        !val ||
+                        !form?.value?.amount ||
+                        parseFloat(val) <= parseFloat(form.value.amount) ||
+                        'Investment amount cannot exceed total received',
+                    ]"
+                  />
+
+                  <!-- Investment Breakdown -->
+                  <div
+                    v-if="investmentAmount && form?.value?.amount"
+                    class="investment-breakdown q-mt-md"
+                  >
+                    <q-banner
+                      dense
+                      rounded
+                      icon="calculate"
+                      color="info"
+                      text-color="white"
+                      class="q-mb-sm"
+                    >
+                      <div class="text-body2">
+                        <div>
+                          Total Received: ₱{{ Number(form?.value?.amount || 0).toLocaleString() }}
+                        </div>
+                        <div>
+                          Investment Amount: ₱{{ Number(investmentAmount || 0).toLocaleString() }}
+                        </div>
+                        <div class="q-mt-sm text-weight-bold">
+                          Net Increase: ₱{{ calculateInvestmentIncrease.toLocaleString() }}
+                        </div>
+                      </div>
+                    </q-banner>
+
+                    <div class="text-caption text-primary">
+                      <q-icon name="church" size="sm" class="q-mr-xs" />
+                      Suggested Tithe (10% of increase): ₱{{
+                        (calculateInvestmentIncrease * 0.1).toLocaleString()
+                      }}
+                    </div>
+                  </div>
+                </div>
+              </q-card-section>
+            </q-card>
           </div>
 
           <!-- Auto-Budget Checkbox for Income Transactions -->
@@ -454,7 +549,14 @@
             color="primary"
             label="Save Transaction"
             @click="finishTransaction"
-            :disable="!form.amount || !form.categoryId || !form.walletId"
+            :disable="
+              !form?.value?.amount ||
+              !form?.value?.categoryId ||
+              !form?.value?.walletId ||
+              (form?.value?.kind === 'income' &&
+                isInvestmentIncome.value &&
+                !investmentAmount.value)
+            "
             class="dialog-save-btn"
           />
         </q-card-actions>
@@ -555,6 +657,10 @@ const form = ref({
   walletId: '',
 })
 
+// Investment income state
+const isInvestmentIncome = ref(false)
+const investmentAmount = ref('')
+
 // Transfer direction state
 const transferFromBudget = ref(false)
 
@@ -569,9 +675,19 @@ const activeAutoBudgeters = ref([])
 const selectedAutoBudgeter = ref(null)
 const hasAutoBudgeters = computed(() => activeAutoBudgeters.value.length > 0)
 
+// Investment income calculations
+const calculateInvestmentIncrease = computed(() => {
+  if (!isInvestmentIncome.value || !form?.value?.amount || !investmentAmount.value) {
+    return 0
+  }
+  const totalReceived = parseFloat(form.value.amount) || 0
+  const invested = parseFloat(investmentAmount.value) || 0
+  return Math.max(0, totalReceived - invested)
+})
+
 // Watch for transaction type changes to reset category selection
 watch(
-  () => form.value.kind,
+  () => form?.value?.kind,
   (newKind, oldKind) => {
     if (newKind !== oldKind) {
       form.value.categoryId = ''
@@ -582,6 +698,11 @@ watch(
       // Reset auto-budget selection when switching away from income
       if (newKind !== 'income') {
         selectedAutoBudgeter.value = null
+      }
+      // Reset investment income state when switching away from income
+      if (newKind !== 'income') {
+        isInvestmentIncome.value = false
+        investmentAmount.value = ''
       }
     }
   },
@@ -627,7 +748,7 @@ const budgetWalletOptions = computed(() => {
 
 // Dynamic category options based on transaction type and transfer direction
 const categoryOptions = computed(() => {
-  if (form.value.kind === 'transfer') {
+  if (form?.value?.kind === 'transfer') {
     if (transferFromBudget.value) {
       // When transferring from budget to wallet, show wallets as category options
       return (wallets.value || []).map((wallet) => ({
@@ -1090,9 +1211,11 @@ function openTransactionDialog() {
   form.value.amount = ''
   form.value.categoryId = ''
   form.value.notes = ''
-  form.value.walletId = wallets[0]?._id || ''
+  form.value.walletId = wallets.value?.[0]?._id || ''
   transferFromBudget.value = false // Reset transfer direction
   selectedAutoBudgeter.value = null // Reset auto-budget selection
+  isInvestmentIncome.value = false // Reset investment income state
+  investmentAmount.value = '' // Reset investment amount
 
   // Ensure budgets are loaded for transfer functionality
   if (budgets.value.length === 0) {
@@ -1117,11 +1240,22 @@ function openEditDialog(transaction) {
   }
   selectedAutoBudgeter.value = null // Reset auto-budget selection for editing
 
+  // Load investment income data if present
+  if (transaction.isInvestmentIncome) {
+    isInvestmentIncome.value = true
+    investmentAmount.value = transaction.investmentAmount
+      ? transaction.investmentAmount.toString()
+      : ''
+  } else {
+    isInvestmentIncome.value = false
+    investmentAmount.value = ''
+  }
+
   showTransactionDialog.value = true
 }
 
 async function finishTransaction() {
-  if (!form.value.amount || !form.value.categoryId || !form.value.walletId) {
+  if (!form?.value?.amount || !form?.value?.categoryId || !form?.value?.walletId) {
     $q.notify({ type: 'negative', message: 'Please fill in all required fields' })
     return
   }
@@ -1135,6 +1269,32 @@ async function finishTransaction() {
     return
   }
 
+  // Validate investment income
+  if (form?.value?.kind === 'income' && isInvestmentIncome.value) {
+    const investedAmount = parseFloat(investmentAmount.value) || 0
+    if (investedAmount < 0) {
+      $q.notify({
+        type: 'negative',
+        message: 'Investment amount cannot be negative.',
+      })
+      return
+    }
+    if (investedAmount > amount) {
+      $q.notify({
+        type: 'negative',
+        message: 'Investment amount cannot exceed total received amount.',
+      })
+      return
+    }
+    if (!investmentAmount.value) {
+      $q.notify({
+        type: 'negative',
+        message: 'Please enter the investment amount.',
+      })
+      return
+    }
+  }
+
   try {
     const transactionData = {
       walletId: form.value.walletId,
@@ -1145,8 +1305,15 @@ async function finishTransaction() {
       datetime: new Date().toISOString(),
     }
 
+    // Add investment income data if applicable
+    if (form?.value?.kind === 'income' && isInvestmentIncome.value && investmentAmount.value) {
+      transactionData.isInvestmentIncome = true
+      transactionData.investmentAmount = parseFloat(investmentAmount.value)
+      transactionData.investmentIncrease = calculateInvestmentIncrease.value
+    }
+
     // If this is a transfer, set transfer-specific fields
-    if (form.value.kind === 'transfer' && form.value.categoryId) {
+    if (form?.value?.kind === 'transfer' && form?.value?.categoryId) {
       if (transferFromBudget.value) {
         // Budget to wallet transfer
         const selectedBudget = budgetWalletOptions.value.find(
@@ -1203,12 +1370,12 @@ async function finishTransaction() {
       await financesStore.addTransaction(transactionData)
 
       // Handle auto-budget allocation for income transactions
-      if (form.value.kind === 'income' && selectedAutoBudgeter.value) {
+      if (form?.value?.kind === 'income' && selectedAutoBudgeter.value) {
         await handleAutoBudgetAllocation(transactionData, amount)
       }
 
       // Refresh expected tithes after any transaction, especially income
-      if (form.value.kind === 'income') {
+      if (form?.value?.kind === 'income') {
         await loadExpectedTithes()
       }
 
@@ -1219,7 +1386,7 @@ async function finishTransaction() {
     selectedTransaction.value = null
 
     // 🔧 ENHANCED: Refresh all related data when transfers happen
-    if (form.value.kind === 'transfer') {
+    if (form?.value?.kind === 'transfer') {
       console.log('🔄 Transfer completed, refreshing all related data...')
 
       // 🔧 NEW: Update budget document if this is a budget withdrawal or allocation
@@ -1663,6 +1830,33 @@ onMounted(async () => {
 .auto-budget-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 25px rgba(33, 150, 243, 0.15);
+}
+
+/* Investment income card styling */
+.investment-income-card {
+  border: 2px solid #ff9800 !important;
+  background: linear-gradient(135deg, #fff3e0 0%, #f3e5f5 100%);
+  transition: all 0.3s ease;
+}
+
+.investment-income-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(255, 152, 0, 0.15);
+}
+
+.investment-breakdown {
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Mobile responsive design */
