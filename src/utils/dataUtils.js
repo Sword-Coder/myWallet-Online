@@ -89,6 +89,7 @@ export function createTransactionDocument(transactionData) {
     // 🔧 FIXED: Include budget-related fields
     budgetId: transactionData.budgetId,
     isBudgetAllocation: transactionData.isBudgetAllocation || false,
+    isBudgetWithdrawal: transactionData.isBudgetWithdrawal || false,
     isTransfer: transactionData.isTransfer || false,
 
     // Timestamps
@@ -151,16 +152,20 @@ export function updateUserReferences(userDoc, updates) {
 /**
  * Calculate spending for a budget period
  */
-export function calculateBudgetSpending(transactions, categoryId, periodStart, periodEnd) {
+export function calculateBudgetSpending(transactions, budget, periodStart, periodEnd) {
   return transactions
     .filter((t) => {
       const transactionDate = new Date(t.datetime)
-      return (
-        t.categoryId === categoryId &&
-        t.kind === 'expense' &&
-        transactionDate >= new Date(periodStart) &&
-        transactionDate <= new Date(periodEnd)
-      )
+      const isInPeriod =
+        transactionDate >= new Date(periodStart) && transactionDate <= new Date(periodEnd)
+
+      // Count regular expenses for this budget's category
+      const isExpense = t.categoryId === budget.categoryId && t.kind === 'expense' && isInPeriod
+
+      // Count budget withdrawals from this specific budget
+      const isBudgetWithdrawal = t.isBudgetWithdrawal && t.budgetId === budget._id && isInPeriod
+
+      return isExpense || isBudgetWithdrawal
     })
     .reduce((sum, t) => sum + t.amount, 0)
 }
@@ -184,7 +189,7 @@ export function getUserFinancialSummary(userDoc, transactions, budgets) {
   const updatedBudgets = userBudgets.map((budget) => {
     const spent = calculateBudgetSpending(
       userTransactions,
-      budget.categoryId,
+      budget,
       budget.periodStart,
       budget.periodEnd,
     )
