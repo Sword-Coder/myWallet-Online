@@ -358,6 +358,10 @@ export const useFinancesStore = defineStore('finances', () => {
         notes: transactionData.notes || '',
         tags: transactionData.tags || [],
         splitPayment: transactionData.splitPayment || { isSplit: false, splitDetails: {} },
+        // 🔧 FIXED: Include budget-related fields
+        budgetId: transactionData.budgetId,
+        isBudgetAllocation: transactionData.isBudgetAllocation || false,
+        isTransfer: transactionData.isTransfer || false,
       }
 
       const savedTransaction = await createTransaction(transactionDoc)
@@ -381,6 +385,7 @@ export const useFinancesStore = defineStore('finances', () => {
       await budgetsStore.refreshBudgetSpent()
 
       console.log('FinancesStore: Transaction added:', savedTransaction._id)
+      console.log('FinancesStore: Transaction data saved:', savedTransaction)
       console.log('FinancesStore: Updated user transactionIds:', updatedTransactionIds)
       return savedTransaction
     } catch (err) {
@@ -542,6 +547,10 @@ export const useFinancesStore = defineStore('finances', () => {
         return total + transaction.amount
       } else if (transaction.kind === 'expense') {
         return total - transaction.amount
+      } else if (transaction.kind === 'transfer') {
+        // Transfer transactions don't affect wallet balance (neutral)
+        // This includes budget allocations
+        return total
       }
       return total
     }, 0)
@@ -585,6 +594,7 @@ export const useFinancesStore = defineStore('finances', () => {
       .filter((t) => t.kind === 'expense')
       .reduce((sum, t) => sum + t.amount, 0)
 
+    // Transfer transactions (including budget allocations) don't count toward totals
     return {
       income,
       expenses,
