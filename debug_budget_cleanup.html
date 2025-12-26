@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Budget Cleanup Debug</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pouchdb/7.0.0/pouchdb.min.js"></script>
+  </head>
+  <body>
+    <h1>Budget Cleanup Debug Tool</h1>
+    <button onclick="checkBudgets()">Check Remaining Budgets</button>
+    <button onclick="deleteAllBudgets()">Delete All Budgets</button>
+    <div id="results"></div>
+
+    <script>
+      // Initialize PouchDB
+      const db = new PouchDB('mywallet')
+
+      async function checkBudgets() {
+        try {
+          const result = await db.allDocs({ include_docs: true })
+          const budgets = result.rows
+            .filter((row) => row.doc._id.startsWith('budget_'))
+            .map((row) => ({
+              id: row.doc._id,
+              amount: row.doc.amount,
+              categoryId: row.doc.categoryId,
+              periodStart: row.doc.periodStart,
+              periodEnd: row.doc.periodEnd,
+            }))
+
+          document.getElementById('results').innerHTML =
+            `<h3>Found ${budgets.length} budget(s):</h3>` +
+            budgets
+              .map((b) => `<p>ID: ${b.id}<br>Amount: ₱${b.amount}<br>Category: ${b.categoryId}</p>`)
+              .join('')
+        } catch (error) {
+          document.getElementById('results').innerHTML = `Error: ${error.message}`
+        }
+      }
+
+      async function deleteAllBudgets() {
+        if (!confirm('Are you sure you want to delete ALL budgets? This cannot be undone.')) {
+          return
+        }
+
+        try {
+          const result = await db.allDocs({ include_docs: true })
+          const budgetDocs = result.rows.filter((row) => row.doc._id.startsWith('budget_'))
+
+          for (let row of budgetDocs) {
+            await db.remove(row.doc)
+          }
+
+          document.getElementById('results').innerHTML =
+            `<p style="color: green;">✅ Deleted ${budgetDocs.length} budget(s)!</p>`
+
+          // Refresh the display
+          setTimeout(checkBudgets, 1000)
+        } catch (error) {
+          document.getElementById('results').innerHTML = `Error: ${error.message}`
+        }
+      }
+    </script>
+  </body>
+</html>
