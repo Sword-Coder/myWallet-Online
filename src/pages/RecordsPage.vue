@@ -1190,6 +1190,12 @@ async function finishTransaction() {
       // Update existing transaction
       console.log('Updating transaction:', selectedTransaction.value._id, transactionData)
       await financesStore.updateTransaction(selectedTransaction.value._id, transactionData)
+
+      // Refresh expected tithes if this was an income transaction
+      if (transactionData.kind === 'income') {
+        await loadExpectedTithes()
+      }
+
       $q.notify({ type: 'positive', message: 'Transaction updated successfully!' })
     } else {
       // Create new transaction
@@ -1199,6 +1205,11 @@ async function finishTransaction() {
       // Handle auto-budget allocation for income transactions
       if (form.value.kind === 'income' && selectedAutoBudgeter.value) {
         await handleAutoBudgetAllocation(transactionData, amount)
+      }
+
+      // Refresh expected tithes after any transaction, especially income
+      if (form.value.kind === 'income') {
+        await loadExpectedTithes()
       }
 
       $q.notify({ type: 'positive', message: 'Transaction added successfully!' })
