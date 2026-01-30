@@ -336,11 +336,6 @@ export const useBudgetsStore = defineStore('budgets', () => {
     return 0
   }
 
-  // Check if budget is exceeded
-  function isBudgetExceeded(budget) {
-    return budget.spent > budget.amount && budget.amount > 0
-  }
-
   // Refresh budget spent amounts
   async function refreshBudgetSpent() {
     if (!usersStore.currentUser) return
@@ -442,7 +437,6 @@ export const useBudgetsStore = defineStore('budgets', () => {
     calculateTotalSpent,
     calculateExpectedTithes,
     getBudgetProgress,
-    isBudgetExceeded,
     refreshBudgetSpent,
     initializeDefaultBudgets,
     watchUserChanges,

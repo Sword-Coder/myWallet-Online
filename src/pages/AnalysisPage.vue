@@ -244,7 +244,7 @@
 
               <q-linear-progress
                 :value="getBudgetProgress(budget)"
-                :color="isBudgetExceeded(budget) ? 'negative' : 'primary'"
+                :color="getBudgetProgressColor(budget)"
                 rounded
                 size="10px"
                 class="q-mt-xs"
@@ -477,8 +477,27 @@ function getBudgetProgress(budget) {
   return 0
 }
 
-function isBudgetExceeded(budget) {
-  return (budget.spent || 0) > budget.amount && budget.amount > 0
+// Enhanced budget progress color logic
+function getBudgetProgressColor(budget) {
+  // Don't show any progress color if no budget amount is set
+  if (!budget.amount || budget.amount <= 0) {
+    return 'grey-4'
+  }
+
+  const progress = getBudgetProgress(budget) // Already returns percentage (0-100)
+
+  // Only show red (negative) when significantly over budget (more than 10% over)
+  if (budget.spent > budget.amount * 1.1) {
+    return 'negative' // Red - significantly over budget
+  }
+
+  // Show orange when close to or slightly over budget (90-110%)
+  if (progress >= 90) {
+    return 'orange' // Orange - close to limit
+  }
+
+  // Show primary (blue) for normal budget usage
+  return 'primary' // Blue - normal budget usage
 }
 
 function getStatIcon(index) {
