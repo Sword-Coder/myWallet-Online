@@ -54,9 +54,15 @@
             </div>
             <div class="text-right">
               <div :class="getBalanceClass(wallet.balance)" class="text-h6">
-                ₱{{ formatBalance(wallet.balance) }}
+                ₱{{ formatBalance(getCalculatedBalance(wallet._id)) }}
               </div>
               <div class="text-caption text-grey">Current Balance</div>
+              <div
+                v-if="wallet.initialBalance !== undefined"
+                class="text-caption q-mt-xs text-grey-6"
+              >
+                Started: ₱{{ formatBalance(wallet.initialBalance) }}
+              </div>
             </div>
           </div>
         </q-card-section>
@@ -127,15 +133,27 @@
             map-options
           />
 
+          <!-- Current Balance (calculated from transactions) -->
+          <q-input
+            filled
+            readonly
+            :model-value="calculatedBalance"
+            label="Current Balance (PHP)"
+            type="number"
+            prefix="₱"
+            class="text-positive"
+          />
+
           <!-- Initial Balance -->
           <q-input
             filled
-            v-model.number="form.balance"
-            label="Initial Balance (PHP)"
+            v-model.number="form.initialBalance"
+            label="Started With (PHP)"
             type="number"
             min="-999999"
             max="999999"
             prefix="₱"
+            hint="Set your starting balance"
           />
 
           <!-- Icon Selection -->
@@ -172,6 +190,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useQuasar } from 'quasar'
 import { useFinancesStore } from 'src/stores/finances'
 import { useUsersStore } from 'src/stores/users'
@@ -181,8 +200,8 @@ const $q = useQuasar()
 const financesStore = useFinancesStore()
 const usersStore = useUsersStore()
 
-// State from stores
-const { wallets } = financesStore
+// State from stores - use storeToRefs to maintain reactivity
+const { wallets } = storeToRefs(financesStore)
 
 // Dialog state
 const showAddDialog = ref(false)
@@ -193,8 +212,15 @@ const form = ref({
   name: '',
   typeLabel: 'Wallet',
   balance: 0,
+  initialBalance: 0,
   icon: 'account_balance_wallet',
   ownerUserId: '',
+})
+
+// Computed: Show calculated balance for the wallet being edited
+const calculatedBalance = computed(() => {
+  if (!form.value._id) return 0
+  return financesStore.calculateWalletBalance(form.value._id)
 })
 
 // Options
@@ -235,6 +261,10 @@ function getBalanceClass(balance) {
   return 'text-grey-8'
 }
 
+function getCalculatedBalance(walletId) {
+  return financesStore.calculateWalletBalance(walletId)
+}
+
 function formatDate(dateString) {
   if (!dateString) return ''
   return new Date(dateString).toLocaleDateString('en-US', {
@@ -273,24 +303,96 @@ async function saveWallet() {
   }
 
   try {
-    const walletData = {
-      name: form.value.name,
-      typeLabel: form.value.typeLabel,
-      balance: Number(form.value.balance) || 0,
-      icon: form.value.icon,
-      ownerUserId: usersStore.currentUser._id,
-      // Map typeLabel to walletType for compatibility
-      walletType: mapTypeToWalletType(form.value.typeLabel),
-      currency: 'PHP', // Set currency to PHP
-    }
-
     if (editingWallet.value) {
-      // Update existing wallet
-      await financesStore.updateWallet(editingWallet.value._id, walletData)
-      $q.notify({ type: 'positive', message: 'Account updated successfully!' })
+      // Get original values before update
+      const originalInitialBalance =
+        editingWallet.value.initialBalance !== undefined
+          ? editingWallet.value.initialBalance
+          : editingWallet.value.balance || 0
+      const newInitialBalance = Number(form.value.initialBalance) || 0
+
+      console.log('💰 Saving wallet balance change:', {
+        walletId: editingWallet.value._id,
+        originalInitialBalance,
+        newInitialBalance,
+        hasChanged: originalInitialBalance !== newInitialBalance,
+      })
+
+      // Create wallet data with new initial balance
+      const walletData = {
+        name: form.value.name,
+        typeLabel: form.value.typeLabel,
+        initialBalance: newInitialBalance,
+        // Balance will be recalculated from transactions, but we set it to newInitialBalance
+        // as the base for future calculations
+        balance: newInitialBalance,
+        icon: form.value.icon,
+        ownerUserId: usersStore.currentUser._id,
+        walletType: mapTypeToWalletType(form.value.typeLabel),
+        currency: 'PHP',
+      }
+
+      // Update existing wallet - pass original balance for tracking
+      // Only create balance change transaction if there's an actual difference
+      if (originalInitialBalance !== newInitialBalance) {
+        await financesStore.updateWallet(
+          editingWallet.value._id,
+          walletData,
+          originalInitialBalance,
+        )
+      } else {
+        // Just save without triggering balance change
+        await financesStore.updateWallet(editingWallet.value._id, walletData)
+      }
+
+      // Reload all data to ensure consistency
+      await financesStore.loadAll()
+
+      // Show notification about balance change
+      if (originalInitialBalance !== newInitialBalance) {
+        const difference = newInitialBalance - originalInitialBalance
+        const changeType = difference > 0 ? 'increased' : 'decreased'
+        $q.notify({
+          type: 'info',
+          message: 'Account updated successfully!',
+          caption: `Started With ${changeType} from ₱${originalInitialBalance.toLocaleString()} to ₱${newInitialBalance.toLocaleString()}`,
+        })
+      } else {
+        $q.notify({ type: 'positive', message: 'Account updated successfully!' })
+      }
     } else {
       // Add new wallet
-      await financesStore.addWallet(walletData)
+      const newWalletData = {
+        name: form.value.name,
+        typeLabel: form.value.typeLabel,
+        initialBalance: Number(form.value.initialBalance) || 0,
+        balance: Number(form.value.initialBalance) || 0,
+        icon: form.value.icon,
+        ownerUserId: usersStore.currentUser._id,
+        walletType: mapTypeToWalletType(form.value.typeLabel),
+        currency: 'PHP',
+      }
+
+      await financesStore.addWallet(newWalletData)
+
+      // Create initial balance transaction if balance > 0
+      const initialBalance = Number(form.value.initialBalance) || 0
+      if (initialBalance > 0) {
+        const newWallet = financesStore.wallets.find(
+          (w) => w.name === form.value.name && w.ownerUserId === usersStore.currentUser._id,
+        )
+        if (newWallet) {
+          await financesStore.createBalanceChangeTransaction(
+            newWallet._id,
+            initialBalance,
+            0,
+            initialBalance,
+          )
+        }
+      }
+
+      await financesStore.loadAll()
+
       $q.notify({ type: 'positive', message: 'Account added successfully!' })
     }
 
@@ -305,9 +407,11 @@ async function saveWallet() {
 function editWallet(wallet) {
   editingWallet.value = wallet
   form.value = {
+    _id: wallet._id,
     name: wallet.name,
     typeLabel: wallet.typeLabel || 'Wallet',
     balance: wallet.balance || 0,
+    initialBalance: wallet.initialBalance || wallet.balance || 0,
     icon: wallet.icon || 'account_balance_wallet',
     ownerUserId: wallet.ownerUserId,
   }
@@ -354,6 +458,7 @@ function resetForm() {
     name: '',
     typeLabel: 'Wallet',
     balance: 0,
+    initialBalance: 0,
     icon: 'account_balance_wallet',
     ownerUserId: usersStore.currentUser?._id || '',
   }
@@ -394,7 +499,7 @@ watch(
 
 // Watch for wallet changes to refresh the form when needed
 watch(
-  () => wallets.length,
+  () => wallets.value.length,
   (newLength, oldLength) => {
     if (newLength > oldLength) {
       form.value.ownerUserId = usersStore.currentUser?._id || ''
