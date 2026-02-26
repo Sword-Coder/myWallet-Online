@@ -102,6 +102,12 @@ export const useFinancesStore = defineStore('finances', () => {
       // Get user data with all related documents
       const userData = await getUserWithData(usersStore.currentUser._id)
 
+      console.log('🔧 loadAll: userData.wallets[0]:', {
+        _id: userData.wallets?.[0]?._id,
+        initialBalance: userData.wallets?.[0]?.initialBalance,
+        balance: userData.wallets?.[0]?.balance,
+      })
+
       console.log('FinancesStore: Raw user data loaded:', {
         userId: userData.user?._id,
         wallets: userData.wallets?.length || 0,
@@ -111,8 +117,48 @@ export const useFinancesStore = defineStore('finances', () => {
       })
 
       // Set the loaded data
+      console.log('🔧 loadAll: BEFORE assignment, wallets.value[0]:', {
+        _id: wallets.value[0]?._id,
+        initialBalance: wallets.value[0]?.initialBalance,
+      })
+      console.log('🔧 loadAll: userData.wallets[0]:', {
+        _id: userData.wallets?.[0]?._id,
+        initialBalance: userData.wallets?.[0]?.initialBalance,
+        balance: userData.wallets?.[0]?.balance,
+      })
+
       wallets.value = userData.wallets || []
       transactions.value = userData.transactions || []
+
+      // 🔧 FIX: Check for wallets with incorrect initialBalance (0 when they should have a balance)
+      // This handles the case where initialBalance wasn't set properly when user entered starting amount
+      for (const wallet of wallets.value) {
+        if (wallet.balance !== undefined && wallet.balance !== null && wallet.balance !== 0) {
+          // Wallet has a balance - check if initialBalance is 0 or undefined
+          if (!wallet.initialBalance || wallet.initialBalance === 0) {
+            // This wallet needs its initialBalance fixed!
+            // Use the current balance as the initialBalance (user started with this amount)
+            console.log(
+              '🔧 FIXING: Wallet',
+              wallet._id,
+              'initialBalance was',
+              wallet.initialBalance,
+              'now setting to',
+              wallet.balance,
+            )
+            wallet.initialBalance = wallet.balance
+            // Save the fix
+            await saveDoc(wallet)
+            // Note: We don't create a balance change transaction here because
+            // fixing initialBalance is not a real transaction - it's just correcting data
+          }
+        }
+      }
+
+      console.log('🔧 loadAll: AFTER assignment, wallets.value[0]:', {
+        _id: wallets.value[0]?._id,
+        initialBalance: wallets.value[0]?.initialBalance,
+      })
 
       // Debug transaction data
       if (transactions.value.length > 0) {
@@ -240,6 +286,7 @@ export const useFinancesStore = defineStore('finances', () => {
         type: 'wallet',
         ownerUserId: usersStore.currentUser._id,
         name: walletData.name || 'New Wallet',
+        initialBalance: Number(walletData.balance) || 0,
         balance: Number(walletData.balance) || 0,
         walletType: walletData.walletType || 'personal',
         sharedWithUserIds: [],
@@ -265,7 +312,7 @@ export const useFinancesStore = defineStore('finances', () => {
   }
 
   // Update wallet
-  async function updateWallet(walletId, updates) {
+  async function updateWallet(walletId, updates, oldBalance = null) {
     if (!usersStore.currentUser) {
       throw new Error('No user logged in')
     }
@@ -279,10 +326,55 @@ export const useFinancesStore = defineStore('finances', () => {
         throw new Error('Wallet not found')
       }
 
+      console.log('💰 updateWallet called:', {
+        walletId,
+        oldBalance,
+        newBalance: updates.balance,
+        balanceChanged:
+          updates.balance !== undefined && oldBalance !== null && updates.balance !== oldBalance,
+      })
+
+      // Create updated wallet object with explicit field preservation
+      // Using JSON parse/stringify to avoid Vue reactive proxy issues
+      const oldWallet = JSON.parse(JSON.stringify(wallets.value[walletIndex]))
+      const mergedWallet = JSON.parse(JSON.stringify(updates))
+
       const updatedWallet = {
-        ...wallets.value[walletIndex],
-        ...updates,
+        ...oldWallet,
+        ...mergedWallet,
+        // Only preserve initialBalance from oldWallet if we're NOT explicitly updating it
+        // This allows setting initial balance when user enters their starting amount
+        initialBalance:
+          mergedWallet.initialBalance !== undefined
+            ? mergedWallet.initialBalance
+            : oldWallet.initialBalance,
         updatedAt: new Date().toISOString(),
+      }
+
+      console.log('🔧 updateWallet: oldWallet.initialBalance:', oldWallet.initialBalance)
+      console.log('🔧 updateWallet: updatedWallet.initialBalance:', updatedWallet.initialBalance)
+
+      // Check if balance changed and create a transaction record
+      if (updates.balance !== undefined && oldBalance !== null && updates.balance !== oldBalance) {
+        const balanceDifference = updates.balance - oldBalance
+        console.log('🔄 Creating balance change transaction:', {
+          walletId,
+          balanceDifference,
+          oldBalance,
+          newBalance: updates.balance,
+        })
+        await createBalanceChangeTransaction(
+          walletId,
+          balanceDifference,
+          oldBalance,
+          updates.balance,
+        )
+      } else {
+        console.log('⚠️ No balance change detected:', {
+          hasUpdatesBalance: updates.balance !== undefined,
+          oldBalance,
+          newBalance: updates.balance,
+        })
       }
 
       await saveDoc(updatedWallet)
@@ -296,6 +388,53 @@ export const useFinancesStore = defineStore('finances', () => {
       throw err
     } finally {
       isLoading.value = false
+    }
+  }
+
+  // Create a special transaction record for balance changes
+  async function createBalanceChangeTransaction(walletId, difference, oldBalance, newBalance) {
+    try {
+      const transactionDoc = {
+        walletId,
+        userId: usersStore.currentUser._id,
+        kind: 'balance_change',
+        amount: Math.abs(difference), // Store absolute value
+        categoryId: 'balance_change', // Special category
+        datetime: new Date().toISOString(),
+        notes: `Wallet balance changed from ₱${oldBalance.toLocaleString()} to ₱${newBalance.toLocaleString()}`,
+        isBalanceChange: true,
+        balanceChangeDetails: {
+          oldBalance,
+          newBalance,
+          difference,
+        },
+      }
+
+      const savedTransaction = await createTransaction(transactionDoc)
+      transactions.value.push(savedTransaction)
+
+      // Update user's transactionIds array to maintain data consistency
+      const currentTransactionIds = usersStore.currentUser.transactionIds || []
+      const updatedTransactionIds = [...currentTransactionIds, savedTransaction._id]
+
+      const updatedUser = updateUserReferences(usersStore.currentUser, {
+        transactionIds: updatedTransactionIds,
+      })
+
+      await saveDoc(updatedUser)
+      usersStore.saveCurrentUser(updatedUser)
+
+      console.log('FinancesStore: Balance change transaction created:', {
+        walletId,
+        difference,
+        oldBalance,
+        newBalance,
+      })
+
+      return savedTransaction
+    } catch (err) {
+      console.error('FinancesStore: Failed to create balance change transaction:', err)
+      // Don't throw - balance change record failure shouldn't block wallet update
     }
   }
 
@@ -378,8 +517,11 @@ export const useFinancesStore = defineStore('finances', () => {
       await saveDoc(updatedUser)
       usersStore.saveCurrentUser(updatedUser)
 
-      // Update wallet balance
-      await updateWalletBalance(transactionData.walletId)
+      // Update wallet balance from transactions
+      // 🔧 FIX: Don't pass oldBalance to avoid creating duplicate balance change transactions
+      // The transaction itself is the source of truth for balance changes
+      const newBalance = calculateWalletBalance(transactionData.walletId)
+      await updateWallet(transactionData.walletId, { balance: newBalance }, null)
 
       // Refresh budgets to update spent amounts
       await budgetsStore.refreshBudgetSpent()
@@ -461,13 +603,12 @@ export const useFinancesStore = defineStore('finances', () => {
         savedTransaction._rev,
       )
 
-      // Update wallet balance if amount or wallet changed
-      if (updates.amount !== undefined || updates.walletId !== undefined) {
-        await updateWalletBalance(oldTransaction?.walletId || savedTransaction.walletId)
-        if (updates.walletId && updates.walletId !== oldTransaction?.walletId) {
-          await updateWalletBalance(updates.walletId)
-        }
-      }
+      // Update wallet balance from transactions
+      // 🔧 FIX: Don't pass oldBalance to avoid creating duplicate balance change transactions
+      // The transaction itself is the source of truth for balance changes
+      const walletId = savedTransaction.walletId
+      const newBalance = calculateWalletBalance(walletId)
+      await updateWallet(walletId, { balance: newBalance }, null)
 
       // Refresh budgets
       await budgetsStore.refreshBudgetSpent()
@@ -521,8 +662,11 @@ export const useFinancesStore = defineStore('finances', () => {
       await saveDoc(updatedUser)
       usersStore.saveCurrentUser(updatedUser)
 
-      // Update wallet balance
-      await updateWalletBalance(transaction.walletId)
+      // Update wallet balance from transactions
+      // 🔧 FIX: Don't pass oldBalance to avoid creating duplicate balance change transactions
+      // The transaction itself is the source of truth for balance changes
+      const newBalance = calculateWalletBalance(transaction.walletId)
+      await updateWallet(transaction.walletId, { balance: newBalance }, null)
 
       // Refresh budgets
       await budgetsStore.refreshBudgetSpent()
@@ -538,29 +682,69 @@ export const useFinancesStore = defineStore('finances', () => {
     }
   }
 
-  // Update wallet balance based on transactions
-  async function updateWalletBalance(walletId) {
+  // Set active wallet
+  function setActiveWallet(walletId) {
+    activeWalletId.value = walletId
+  }
+
+  // Calculate wallet balance from ALL transactions
+  // Current Balance = Initial Balance + Income - Expenses
+  function calculateWalletBalance(walletId) {
+    const wallet = wallets.value.find((w) => w._id === walletId)
+    if (!wallet) {
+      console.warn('🔍 calculateWalletBalance: Wallet not found:', walletId)
+      return 0
+    }
+
+    // Get initial balance - prefer explicit initialBalance, fallback to balance
+    let initialBalance = Number(wallet.initialBalance)
+    if (initialBalance === undefined || initialBalance === null || isNaN(initialBalance)) {
+      initialBalance = Number(wallet.balance) || 0
+      console.warn('🔍 calculateWalletBalance: initialBalance not set, using balance:', {
+        walletId,
+        initialBalance,
+        balance: wallet.balance,
+      })
+    }
+
+    // Get all transactions for this wallet
     const walletTransactions = transactions.value.filter((t) => t.walletId === walletId)
 
-    const balance = walletTransactions.reduce((total, transaction) => {
+    // Calculate net from all transactions
+    // Exclude balance change transactions as they are just records of balance adjustments
+    // The actual balance is derived from: initialBalance + income - expenses
+    const regularTransactions = walletTransactions.filter((t) => !t.isBalanceChange)
+
+    console.log('🔍 calculateWalletBalance DEBUG:', {
+      walletId,
+      walletName: wallet.name,
+      initialBalance,
+      totalTransactions: walletTransactions.length,
+      regularTransactionsCount: regularTransactions.length,
+      transactions: regularTransactions.map((t) => ({ kind: t.kind, amount: t.amount })),
+    })
+
+    const transactionNet = regularTransactions.reduce((total, transaction) => {
       if (transaction.kind === 'income') {
         return total + transaction.amount
       } else if (transaction.kind === 'expense') {
         return total - transaction.amount
-      } else if (transaction.kind === 'transfer') {
-        // Transfer transactions don't affect wallet balance (neutral)
-        // This includes budget allocations
-        return total
       }
       return total
     }, 0)
 
-    await updateWallet(walletId, { balance })
-  }
+    const finalBalance = initialBalance + transactionNet
 
-  // Set active wallet
-  function setActiveWallet(walletId) {
-    activeWalletId.value = walletId
+    console.log('🔍 calculateWalletBalance RESULT:', {
+      walletId,
+      walletName: wallet.name,
+      initialBalance,
+      transactionNet,
+      finalBalance,
+    })
+
+    // Current balance = initial balance + net from transactions
+    return finalBalance
   }
 
   // Get transactions for active wallet
@@ -586,7 +770,9 @@ export const useFinancesStore = defineStore('finances', () => {
 
   // Calculate totals
   const totals = computed(() => {
-    const filtered = activeWalletTransactions.value
+    // Exclude balance change transactions from totals calculation
+    // Balance changes represent wallet balance adjustments, not actual income/expenses
+    const filtered = activeWalletTransactions.value.filter((t) => !t.isBalanceChange)
 
     const income = filtered.filter((t) => t.kind === 'income').reduce((sum, t) => sum + t.amount, 0)
 
@@ -684,6 +870,7 @@ export const useFinancesStore = defineStore('finances', () => {
       try {
         await addWallet({
           name: 'Main Wallet',
+          initialBalance: 0,
           balance: 0,
           walletType: 'personal',
         })
@@ -715,6 +902,7 @@ export const useFinancesStore = defineStore('finances', () => {
     debugDatabaseAccess,
     addWallet,
     updateWallet,
+    createBalanceChangeTransaction,
     deleteWallet,
     addTransaction,
     updateTransaction,
@@ -722,6 +910,7 @@ export const useFinancesStore = defineStore('finances', () => {
     setActiveWallet,
     getFilteredTransactions,
     getRecentTransactions,
+    calculateWalletBalance,
     initializeDefaultWallet,
     watchUserChanges,
   }

@@ -108,9 +108,17 @@ export function formatDateForPDF(dateStr, timeStr) {
 /**
  * Format transaction type for PDF
  * @param {string} kind - transaction kind (income, expense, transfer)
+ * @param {Object} transaction - optional transaction object for balance changes
  * @returns {string} formatted type with color
  */
-export function formatTypeForPDF(kind) {
+export function formatTypeForPDF(kind, transaction = {}) {
+  if (transaction.isBalanceChange) {
+    const direction = transaction.balanceChangeDetails?.difference < 0 ? '↓' : '↑'
+    return {
+      text: `${direction} Balance Change`,
+      color: [128, 128, 128], // Grey color for balance changes
+    }
+  }
   const typeMap = {
     income: { text: 'Income', color: [77, 147, 78] },
     expense: { text: 'Expense', color: [220, 53, 69] },
@@ -177,6 +185,44 @@ export function generatePDFFilename() {
 }
 
 /**
+ * Calculate totals including balance change impact
+ * @param {Array} transactions
+ * @param {Array} wallets
+ * @returns {Object} totals with balance change info
+ */
+function calculateTotalsWithBalanceChanges(transactions, wallets = []) {
+  const incomeTotal = transactions
+    .filter((t) => t.kind === 'income' && !t.isBalanceChange)
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+
+  const expenseTotal = transactions
+    .filter((t) => t.kind === 'expense' && !t.isBalanceChange)
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0)
+
+  // Calculate balance change impact
+  const balanceChanges = transactions
+    .filter((t) => t.isBalanceChange)
+    .reduce((sum, t) => sum + (t.balanceChangeDetails?.difference || 0), 0)
+
+  // Get total wallet balance (Started With)
+  const walletBalance = wallets.reduce((sum, w) => sum + Number(w.balance || 0), 0)
+
+  // Calculate Available Now = Started With + Income - Expenses
+  const availableNow = walletBalance + incomeTotal - expenseTotal
+
+  const netTotal = incomeTotal - expenseTotal
+
+  return {
+    incomeTotal,
+    expenseTotal,
+    netTotal,
+    balanceChanges,
+    walletBalance,
+    availableNow,
+  }
+}
+
+/**
  * Create beautifully formatted PDF report
  * @param {Array} transactions
  * @param {Array} wallets
@@ -228,23 +274,25 @@ export function exportToPDF(transactions, wallets, categories = [], userInfo = {
 
     currentY += 8
 
-    // Calculate totals
-    const incomeTotal = transactions
-      .filter((t) => t.kind === 'income')
-      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
-
-    const expenseTotal = transactions
-      .filter((t) => t.kind === 'expense')
-      .reduce((sum, t) => sum + Number(t.amount || 0), 0)
-
-    const netTotal = incomeTotal - expenseTotal
+    // Calculate totals with balance change impact
+    const totals = calculateTotalsWithBalanceChanges(transactions, wallets)
 
     // Summary data - ensure amounts are properly formatted
     const summaryData = [
-      ['Income', formatAmountForPDF(incomeTotal)],
-      ['Expenses', formatAmountForPDF(expenseTotal)],
-      ['Net Total', formatAmountForPDF(netTotal)],
+      ['Started With', formatAmountForPDF(totals.walletBalance)],
+      ['Income', formatAmountForPDF(totals.incomeTotal)],
+      ['Expenses', formatAmountForPDF(totals.expenseTotal)],
+      ['Available Now', formatAmountForPDF(totals.availableNow)],
     ]
+
+    // Add balance change note if any
+    if (totals.balanceChanges !== 0) {
+      const changeType = totals.balanceChanges > 0 ? 'increased' : 'decreased'
+      summaryData.push([
+        'Note',
+        `Wallet value ${changeType} by ₱${Math.abs(totals.balanceChanges).toLocaleString()} during this period`,
+      ])
+    }
 
     // Create summary table with proper column widths
     autoTable(doc, {
@@ -262,11 +310,11 @@ export function exportToPDF(transactions, wallets, categories = [], userInfo = {
         fontSize: 10,
       },
       columnStyles: {
-        0: { cellWidth: 40 }, // Category column
-        1: { cellWidth: 35, halign: 'right' }, // Amount column - right aligned
+        0: { cellWidth: 50 }, // Category column
+        1: { cellWidth: 45, halign: 'right' }, // Amount column - right aligned
       },
       margin: { left: 15, right: 15 },
-      tableWidth: 85, // Ensure table fits
+      tableWidth: 95, // Ensure table fits
     })
 
     currentY = doc.lastAutoTable.finalY + 10
@@ -320,14 +368,19 @@ export function exportToPDF(transactions, wallets, categories = [], userInfo = {
         dateTime = formatDateForPDF(transaction.date, transaction.time)
       }
 
-      const type = formatTypeForPDF(transaction.kind).text
+      const type = formatTypeForPDF(transaction.kind, transaction).text
       const amount = formatAmountForPDF(transaction.amount)
-      const category = truncateTextForPDF(
-        getCategoryNameForPDF(transaction.categoryId, categories),
-        15,
-      )
+      const category = transaction.isBalanceChange
+        ? 'Balance Change'
+        : truncateTextForPDF(getCategoryNameForPDF(transaction.categoryId, categories), 15)
       const account = truncateTextForPDF(getAccountNameForPDF(transaction.walletId, wallets), 10)
-      const notes = truncateTextForPDF(transaction.notes || '', 25) // Truncate notes to fit
+      const notes = transaction.isBalanceChange
+        ? truncateTextForPDF(
+            transaction.notes ||
+              `Balance ${transaction.balanceChangeDetails?.difference < 0 ? 'decreased' : 'increased'} by ₱${transaction.amount.toLocaleString()}`,
+            25,
+          )
+        : truncateTextForPDF(transaction.notes || '', 25) // Truncate notes to fit
 
       return [dateTime, type, amount, category, account, notes]
     })
@@ -367,7 +420,7 @@ export function exportToPDF(transactions, wallets, categories = [], userInfo = {
         // Color code transaction types
         if (data.column.index === 1 && data.section === 'body') {
           const transaction = transactions[data.row.index]
-          const typeInfo = formatTypeForPDF(transaction.kind)
+          const typeInfo = formatTypeForPDF(transaction.kind, transaction)
           doc.setTextColor(...typeInfo.color)
         }
       },

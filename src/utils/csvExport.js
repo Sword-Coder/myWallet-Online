@@ -108,9 +108,14 @@ export function formatDateForCSV(dateStr, timeStr) {
 /**
  * Format transaction type to match CSV format
  * @param {string} kind - transaction kind (income, expense, transfer)
+ * @param {Object} transaction - optional transaction object for balance changes
  * @returns {string} formatted type like "(+) Income"
  */
-export function formatTypeForCSV(kind) {
+export function formatTypeForCSV(kind, transaction = {}) {
+  if (transaction.isBalanceChange) {
+    const direction = transaction.balanceChangeDetails?.difference < 0 ? '(↓)' : '(↑)'
+    return `${direction} Balance Change`
+  }
   const typeMap = {
     income: '(+) Income',
     expense: '(-) Expense',
@@ -210,11 +215,16 @@ export function convertToCSV(transactions, wallets, categories = []) {
       time = formatDateForCSV(transaction.date, transaction.time)
     }
 
-    const type = formatTypeForCSV(transaction.kind)
+    const type = formatTypeForCSV(transaction.kind, transaction)
     const amount = formatAmountForCSV(transaction.amount)
-    const category = getCategoryNameForCSV(transaction.categoryId, categories)
+    const category = transaction.isBalanceChange
+      ? 'Balance Change'
+      : getCategoryNameForCSV(transaction.categoryId, categories)
     const account = getAccountName(transaction.walletId, wallets)
-    const notes = transaction.notes || ''
+    const notes = transaction.isBalanceChange
+      ? transaction.notes ||
+        `Balance ${transaction.balanceChangeDetails?.difference < 0 ? 'decreased' : 'increased'} by ₱${transaction.amount.toLocaleString()}`
+      : transaction.notes || ''
 
     const row = `"${time}","${type}","${amount}","${category}","${account}","${notes}"`
     csvRows.push(row)

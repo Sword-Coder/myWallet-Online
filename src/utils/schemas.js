@@ -137,7 +137,7 @@ export function validateDocument(doc, schemaName) {
       if (typeof doc.amount !== 'number' || doc.amount < 0) {
         errors.push('Amount must be a positive number')
       }
-      if (!['income', 'expense', 'transfer'].includes(doc.kind)) {
+      if (!['income', 'expense', 'transfer', 'balance_change'].includes(doc.kind)) {
         errors.push('Invalid transaction kind')
       }
       break
