@@ -4,6 +4,53 @@
     <div class="text-h5 text-weight-bold q-mb-md">{{ welcomeMessage }}</div>
     <div class="text-subtitle2 text-grey q-mb-lg">{{ currentMonth }}</div>
 
+    <!-- 🆕 Initial Balance Setup Dialog for New Users -->
+    <q-dialog v-model="showInitialBalanceDialog" persistent>
+      <q-card class="initial-balance-card">
+        <q-card-section class="dialog-header text-white">
+          <div class="text-h6">
+            <q-icon name="account_balance_wallet" class="q-mr-sm" />
+            Welcome to myWallet! 🎉
+          </div>
+        </q-card-section>
+
+        <q-card-section class="q-pa-lg text-center">
+          <div class="text-subtitle1 q-mb-md">
+            Let's set up your starting balance to begin tracking your finances.
+          </div>
+
+          <div class="text-caption text-grey q-mb-lg">
+            How much do you currently have in your wallet or bank account?
+          </div>
+
+          <q-input
+            v-model.number="initialBalance"
+            type="number"
+            filled
+            prefix="₱"
+            label="Current Balance"
+            class="balance-input q-mb-md"
+            :rules="[(val) => (val !== null && val !== undefined) || 'Please enter your balance']"
+          />
+
+          <div class="text-caption text-grey-6">
+            Don't worry, you can change this anytime from the Accounts page.
+          </div>
+        </q-card-section>
+
+        <q-card-actions align="center" class="q-pb-lg">
+          <q-btn
+            color="primary"
+            label="Start Tracking!"
+            size="lg"
+            unelevated
+            @click="setInitialBalance"
+            :disable="initialBalance === null"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
+
     <!-- 🆕 Shared Wallet Alert -->
     <q-card
       v-if="activeWallet && activeWallet !== 'all'"
@@ -59,7 +106,7 @@
           </span>
           <span v-else class="text-grey">Loading wallet...</span>
         </div>
-        <div class="text-h6" :style="{ color: walletBalance >= 0 ? '#dc3545' : '#10b981' }">
+        <div class="text-h6" :style="{ color: netTotal >= 0 ? '#10b981' : '#dc3545' }">
           ₱ {{ netTotal.toLocaleString() }}
         </div>
       </div>
@@ -96,6 +143,10 @@
           </div>
         </div>
       </div>
+      <!-- Debug info - remove in production -->
+      <div class="text-caption text-grey q-mt-sm" style="font-size: 10px">
+        Debug: walletBal={{ walletBalance }}, total={{ netTotal }}
+      </div>
     </q-card>
 
     <!-- Recent Transactions -->
@@ -112,15 +163,12 @@
         <div class="row items-center justify-between">
           <div>
             <div class="text-subtitle2">
-              {{ getCategoryName(tx.categoryId) }}
+              {{ getCategoryName(tx.categoryId, tx) }}
             </div>
             <div class="text-caption text-grey">{{ formatDate(tx.datetime) }}</div>
           </div>
-          <div
-            :style="{ color: tx.kind === 'income' ? '#4d934e' : '#dc3545' }"
-            class="text-subtitle2"
-          >
-            {{ tx.kind === 'income' ? '+' : '-' }}{{ tx.amount.toLocaleString() }} PHP
+          <div :style="{ color: getAmountColor(tx) }" class="text-subtitle2">
+            {{ getAmountDisplay(tx) }}
           </div>
         </div>
       </q-card>
@@ -129,14 +177,19 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { storeToRefs } from 'pinia'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
+import { useQuasar } from 'quasar'
 import { useFinancesStore } from 'src/stores/finances'
 import { useUsersStore } from 'src/stores/users'
 import { useCategoriesStore } from 'src/stores/categories'
 
 const router = useRouter()
+const route = useRoute()
+
+// Quasar UI
+const $q = useQuasar()
 
 // Stores
 const financesStore = useFinancesStore()
@@ -145,6 +198,8 @@ const categoriesStore = useCategoriesStore()
 
 // UI state
 const sharedMembers = ref([])
+const showInitialBalanceDialog = ref(false)
+const initialBalance = ref(null)
 
 // Connect to store's active wallet - use store's activeWalletId as the source of truth
 const activeWallet = computed({
@@ -165,7 +220,7 @@ const { categories } = storeToRefs(categoriesStore)
 const dataVersion = ref(0)
 
 // Access computed properties directly from store instance
-const totals = computed(() => financesStore.totals)
+// totals is no longer used directly as we use walletBalance which already includes all calculations
 
 // Data readiness check
 const isDataReady = computed(() => {
@@ -267,6 +322,75 @@ const validActiveWallet = computed(() => {
   return null
 })
 
+// Wallet balance - uses the calculated balance from the store for consistency
+const walletBalance = computed(() => {
+  // Ensure storeWallets is an array before calling reduce
+  if (!storeWallets.value || !Array.isArray(storeWallets.value)) {
+    console.log('🔍 HomePage: walletBalance returning 0 - no wallets')
+    return 0
+  }
+
+  if (activeWallet.value === 'all') {
+    const total = storeWallets.value.reduce((total, wallet) => {
+      return total + financesStore.calculateWalletBalance(wallet._id)
+    }, 0)
+    console.log('🔍 HomePage: walletBalance (all wallets):', total)
+    return total
+  }
+
+  // Calculate balance from store (includes initialBalance + transactions)
+  const calculatedBalance = financesStore.calculateWalletBalance(activeWallet.value)
+  console.log('🔍 HomePage: walletBalance:', {
+    activeWallet: activeWallet.value,
+    calculatedBalance,
+  })
+  return calculatedBalance
+})
+
+// Watches - defined AFTER computed properties they depend on
+// Force reactivity trigger when wallet data changes
+watch(
+  () => storeWallets.value,
+  (newWallets, oldWallets) => {
+    console.log('🔄 HomePage: Wallets changed, incrementing dataVersion:', {
+      oldWalletsCount: oldWallets?.length || 0,
+      newWalletsCount: newWallets?.length || 0,
+    })
+    dataVersion.value++
+  },
+  { deep: true },
+)
+
+// Force reactivity when wallet balance specifically changes
+watch(
+  () => walletBalance.value,
+  (newBalance, oldBalance) => {
+    console.log('🔄 HomePage: Wallet balance changed:', {
+      oldBalance,
+      newBalance,
+      difference: newBalance - (oldBalance || 0),
+    })
+    dataVersion.value++
+  },
+)
+
+// Deep watch on validActiveWallet to catch balance changes within the object
+watch(
+  () => validActiveWallet.value,
+  (newWallet, oldWallet) => {
+    if (newWallet) {
+      console.log('🔄 HomePage: Active wallet object changed or updated:', {
+        id: newWallet._id,
+        balance: newWallet.balance,
+        oldBalance: oldWallet?.balance,
+        balanceChanged: oldWallet && newWallet.balance !== oldWallet.balance,
+      })
+      dataVersion.value++
+    }
+  },
+  { deep: true },
+)
+
 // Force reactivity trigger when data becomes available
 watch([isDataReady, validActiveWallet], ([ready, wallet]) => {
   if (ready && wallet) {
@@ -275,22 +399,33 @@ watch([isDataReady, validActiveWallet], ([ready, wallet]) => {
   }
 })
 
-const walletBalance = computed(() => {
-  // Ensure storeWallets is an array before calling reduce
-  if (!storeWallets.value || !Array.isArray(storeWallets.value)) {
-    return 0
-  }
-
-  if (activeWallet.value === 'all') {
-    return storeWallets.value.reduce((total, wallet) => total + (wallet.balance || 0), 0)
-  }
-  const wallet = typeof validActiveWallet.value === 'object' ? validActiveWallet : null
-  return wallet ? wallet.balance : 0
+const incomeTotal = computed(() => {
+  // Filter out balance change transactions from income
+  const allTransactions = financesStore.transactions
+  const regularTransactions = allTransactions.filter((t) => !t.isBalanceChange)
+  return regularTransactions
+    .filter((t) => t.kind === 'income')
+    .reduce((sum, t) => sum + t.amount, 0)
 })
+const expenseTotal = computed(() => {
+  // Filter out balance change transactions from expenses
+  const allTransactions = financesStore.transactions
+  const regularTransactions = allTransactions.filter((t) => !t.isBalanceChange)
+  return regularTransactions
+    .filter((t) => t.kind === 'expense')
+    .reduce((sum, t) => sum + t.amount, 0)
+})
+const netTotal = computed(() => {
+  // Get wallet balance - this already includes initialBalance + all transactions
+  // So we return it directly without adding regularNet again (which would double-count)
+  const walletBal = walletBalance.value || 0
 
-const incomeTotal = computed(() => totals.value?.income || 0)
-const expenseTotal = computed(() => totals.value?.expenses || 0)
-const netTotal = computed(() => totals.value?.net || 0)
+  console.log('🔍 HomePage: netTotal calculation:', {
+    walletBalance: walletBal,
+  })
+
+  return walletBal
+})
 
 const recentTransactions = computed(() => {
   try {
@@ -301,9 +436,23 @@ const recentTransactions = computed(() => {
   }
 })
 
-// Check if user is new (no transactions yet)
+// Check if user is new (no transactions yet and wallet has 0 balance)
 const isNewUser = computed(() => {
   return financesStore.transactions.length === 0
+})
+
+// Check if initial balance prompt should be shown
+const shouldShowInitialBalancePrompt = computed(() => {
+  if (!isNewUser.value) return false
+
+  // Check if wallet exists and has 0 or null balance
+  if (validActiveWallet.value) {
+    const balance = validActiveWallet.value.balance
+    return balance === 0 || balance === null || balance === undefined
+  }
+
+  // No wallet yet
+  return true
 })
 
 // Dynamic welcome message based on user status
@@ -312,9 +461,31 @@ const welcomeMessage = computed(() => {
 })
 
 // Helper functions
-function getCategoryName(categoryId) {
+function getCategoryName(categoryId, transaction = null) {
+  // Handle balance change transactions (check both flag and special categoryId)
+  if ((transaction && transaction.isBalanceChange) || categoryId === 'balance_change') {
+    return 'Wallet Balance'
+  }
+
   const category = (categories.value || []).find((c) => c._id === categoryId)
   return category ? category.name : 'Uncategorized'
+}
+
+// Get amount display with sign
+function getAmountDisplay(transaction) {
+  if (transaction.isBalanceChange || transaction.categoryId === 'balance_change') {
+    // For balance change transactions, show positive sign for increase
+    return `+${transaction.amount.toLocaleString()} PHP`
+  }
+  return `${transaction.kind === 'income' ? '+' : '-'}${transaction.amount.toLocaleString()} PHP`
+}
+
+// Get amount color
+function getAmountColor(transaction) {
+  if (transaction.isBalanceChange || transaction.categoryId === 'balance_change') {
+    return '#6c757d' // Grey for balance changes
+  }
+  return transaction.kind === 'income' ? '#4d934e' : '#dc3545'
 }
 
 function formatDate(datetime) {
@@ -367,7 +538,27 @@ onMounted(async () => {
     walletsCount: storeWallets.value?.length || 0,
     activeWalletId: activeWalletId.value,
   })
+
+  // Check if we should show the initial balance dialog
+  nextTick(() => {
+    if (shouldShowInitialBalancePrompt.value) {
+      setTimeout(() => {
+        showInitialBalanceDialog.value = true
+      }, 500) // Small delay for better UX
+    }
+  })
+
+  // Refresh data when page becomes visible (user returns from Accounts page)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
+
+// Handle visibility change - refresh data when page becomes visible
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible') {
+    console.log('🔄 HomePage: Page became visible, refreshing data...')
+    financesStore.loadAll()
+  }
+}
 
 // Watch for wallet changes to update shared members when active wallet changes
 watch(
@@ -406,6 +597,84 @@ watch(
   },
   { immediate: true },
 )
+
+// Refresh data when navigating back to this page
+watch(
+  () => route.name,
+  (newRoute) => {
+    if (newRoute === 'home' || newRoute === 'HomePage') {
+      console.log('🔄 HomePage: Route changed to home, refreshing data...')
+      financesStore.loadAll()
+    }
+  },
+)
+
+// Set initial balance for new user
+async function setInitialBalance() {
+  if (initialBalance.value === null || initialBalance.value === undefined) {
+    $q.notify({
+      type: 'warning',
+      message: 'Please enter your current balance',
+    })
+    return
+  }
+
+  const newBalance = Number(initialBalance.value) || 0
+
+  try {
+    // Load categories first to ensure we have the latest data
+    await categoriesStore.loadCategories()
+
+    // Initialize default categories for new user if none exist
+    if (categoriesStore.categories.length === 0) {
+      console.log('Initializing default categories for new user...')
+      await categoriesStore.initializeDefaultCategories()
+    }
+
+    // If wallet exists, update its balance AND initialBalance
+    if (validActiveWallet.value) {
+      const oldBalance = validActiveWallet.value.balance || 0
+
+      // 🔧 FIX: Also update initialBalance to preserve the starting amount
+      await financesStore.updateWallet(
+        validActiveWallet.value._id,
+        {
+          balance: newBalance,
+          initialBalance: newBalance, // Set initialBalance so future calculations are correct
+        },
+        oldBalance,
+      )
+      // Note: We don't create a balance change transaction here because
+      // setting initial balance is NOT a transaction - it's just telling the app your starting amount
+    } else {
+      // Create new wallet with the initial balance
+      await financesStore.addWallet({
+        name: 'Main Wallet',
+        initialBalance: newBalance, // Set initialBalance for new wallet
+        balance: newBalance,
+        walletType: 'personal',
+      })
+    }
+
+    // Reload data to refresh
+    await financesStore.loadAll()
+
+    // Close dialog
+    showInitialBalanceDialog.value = false
+
+    $q.notify({
+      type: 'positive',
+      message: 'Starting balance set successfully! 🎉',
+      caption: `Your wallet balance is now ₱${newBalance.toLocaleString()}`,
+    })
+  } catch (error) {
+    console.error('Failed to set initial balance:', error)
+    $q.notify({
+      type: 'negative',
+      message: 'Failed to set starting balance',
+    })
+  }
+}
 </script>
 
 <style scoped>
@@ -435,5 +704,37 @@ watch(
   border-left-color: #4d934e;
   transform: translateX(4px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Initial Balance Dialog Styling */
+.initial-balance-card {
+  border-radius: 16px;
+  overflow: hidden;
+  max-width: 450px;
+  width: 90vw;
+}
+
+.initial-balance-card .dialog-header {
+  background: linear-gradient(135deg, #4d934e 0%, #6ba06f 100%);
+  padding: 24px;
+  text-align: center;
+}
+
+.initial-balance-card .q-input {
+  font-size: 1.2rem;
+}
+
+.initial-balance-card .q-input :deep(.q-field__control) {
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.initial-balance-card .balance-input {
+  font-size: 1.5rem;
+}
+
+.initial-balance-card .q-btn {
+  min-width: 200px;
+  border-radius: 25px;
 }
 </style>
