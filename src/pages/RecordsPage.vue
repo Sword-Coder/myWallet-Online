@@ -120,6 +120,9 @@
             <q-item-label class="text-weight-medium">{{
               getCategoryName(transaction.categoryId, transaction)
             }}</q-item-label>
+            <q-item-label caption v-if="transaction.isBalanceChange" class="text-grey">
+              {{ getBalanceChangeMessage(transaction) }}
+            </q-item-label>
             <q-item-label caption>{{ formatDateTime(transaction.datetime) }}</q-item-label>
             <q-item-label caption v-if="transaction.notes">{{ transaction.notes }}</q-item-label>
           </q-item-section>
@@ -596,43 +599,52 @@ const { budgets } = storeToRefs(budgetsStore)
 const { currentUser } = storeToRefs(usersStore)
 
 // Access computed properties directly from store instance
-const totals = computed(() => financesStore.totals)
 const spiritualGiving = computed(() => financesStore.spiritualGiving)
 
-// 🔧 NEW: Calculate available amount for Records page (after budgets) - FIXED to account for withdrawals
+// 🔧 FIX: Watch for wallet changes to trigger reactivity
+watch(
+  () => wallets.value,
+  (newWallets, oldWallets) => {
+    console.log('🔄 RecordsPage: Wallets changed:', {
+      oldWalletsCount: oldWallets?.length || 0,
+      newWalletsCount: newWallets?.length || 0,
+    })
+  },
+  { deep: true },
+)
+
+// 🔧 FIXED: Calculate available amount for Records page
+// Uses the calculated wallet balance from the store (same as HomePage and AccountsPage)
 const availableAmount = computed(() => {
   console.log('=== AVAILABLE AMOUNT CALCULATION ===')
-  const allTransactions = financesStore.transactions
 
-  const income = allTransactions
-    .filter((t) => t.kind === 'income')
-    .reduce((sum, t) => sum + t.amount, 0)
+  // Get the calculated wallet balance from the store (includes initialBalance + transactions)
+  let calculatedBalance = 0
 
-  const expenses = allTransactions
-    .filter((t) => t.kind === 'expense')
-    .reduce((sum, t) => sum + t.amount, 0)
+  console.log('Active wallet:', activeWallet.value)
 
-  const budgetAllocations = allTransactions
-    .filter((t) => t.isBudgetAllocation === true)
-    .reduce((sum, t) => sum + t.amount, 0)
+  // 🔧 FIX: Extract wallet ID from object if needed
+  const getWalletId = (walletValue) => {
+    if (!walletValue) return null
+    if (walletValue === 'all') return 'all'
+    return typeof walletValue === 'object' ? walletValue._id : walletValue
+  }
 
-  const budgetWithdrawals = allTransactions
-    .filter((t) => t.isBudgetWithdrawal === true)
-    .reduce((sum, t) => sum + t.amount, 0)
+  const walletId = getWalletId(activeWallet.value)
 
-  console.log('Available amount components:', {
-    income,
-    expenses,
-    budgetAllocations,
-    budgetWithdrawals,
-  })
+  if (walletId && walletId !== 'all') {
+    calculatedBalance = financesStore.calculateWalletBalance(walletId)
+  } else if (wallets.value?.length > 0) {
+    // For 'all' wallets, sum all calculated balances
+    calculatedBalance = wallets.value.reduce((sum, wallet) => {
+      const walletBalance = financesStore.calculateWalletBalance(wallet._id)
+      console.log('Wallet:', wallet.name, 'balance:', walletBalance)
+      return sum + walletBalance
+    }, 0)
+  }
 
-  // Available = Income - Expenses - Allocations + Withdrawals
-  // This means: money coming in - money spent - money allocated to budgets + money returned from budgets
-  const available = income - expenses - budgetAllocations + budgetWithdrawals
-  console.log('Final available amount:', available)
-
-  return available
+  console.log('Available amount:', calculatedBalance)
+  return calculatedBalance
 })
 
 // Dialog state
@@ -787,9 +799,21 @@ const categoryOptions = computed(() => {
 // Recent transactions (at least 3, up to 10) - Most recent first
 const recentTransactions = computed(() => financesStore.getRecentTransactions(10))
 
-// Current month totals
-const incomeTotal = computed(() => totals.value.income)
-const expenseTotal = computed(() => totals.value.expenses)
+// Current month totals - exclude balance change transactions from regular income/expense
+const incomeTotal = computed(() => {
+  const allTransactions = financesStore.transactions
+  const regularTransactions = allTransactions.filter((t) => !t.isBalanceChange)
+  return regularTransactions
+    .filter((t) => t.kind === 'income')
+    .reduce((sum, t) => sum + t.amount, 0)
+})
+const expenseTotal = computed(() => {
+  const allTransactions = financesStore.transactions
+  const regularTransactions = allTransactions.filter((t) => !t.isBalanceChange)
+  return regularTransactions
+    .filter((t) => t.kind === 'expense')
+    .reduce((sum, t) => sum + t.amount, 0)
+})
 // 🔧 CHANGED: Show available amount (after budgets) instead of gross net
 const netTotal = computed(() => availableAmount.value)
 
@@ -818,6 +842,11 @@ const budgetTotal = computed(() => {
 // Helper functions
 function getCategoryName(categoryId, transaction = null) {
   console.log('🔍 getCategoryName called with:', { categoryId, transaction })
+
+  // Handle balance change transactions (check both flag and special categoryId)
+  if ((transaction && transaction.isBalanceChange) || categoryId === 'balance_change') {
+    return 'Wallet Balance'
+  }
 
   // 🔧 FIXED: For budget allocation transactions, show the actual budget category name with "Budget" suffix
   if (transaction && transaction.budgetId) {
@@ -853,6 +882,10 @@ function getCategoryName(categoryId, transaction = null) {
 }
 
 function getTransactionIcon(transaction) {
+  if (transaction.isBalanceChange) {
+    return 'wallet' // Wallet icon for balance changes
+  }
+
   if (transaction.isBudgetAllocation) {
     return '⇄' // Budget allocation icon
   }
@@ -872,6 +905,10 @@ function getTransactionIcon(transaction) {
 }
 
 function getTransactionColor(transaction) {
+  if (transaction.isBalanceChange) {
+    return 'grey' // Grey color for balance changes as requested
+  }
+
   if (transaction.isBudgetAllocation) {
     return 'info' // Blue for budget allocations
   }
@@ -893,6 +930,12 @@ function getTransactionColor(transaction) {
 function getAmountDisplay(transaction) {
   const amount = transaction.amount.toLocaleString()
 
+  if (transaction.isBalanceChange) {
+    // For balance decrease, show negative; for increase, show positive
+    const sign = transaction.balanceChangeDetails?.difference < 0 ? '-' : '+'
+    return `${sign}₱${amount}`
+  }
+
   if (transaction.isBudgetAllocation) {
     return `₱${amount}` // Budget allocations show without +/- sign
   }
@@ -908,6 +951,11 @@ function getAmountDisplay(transaction) {
 }
 
 function getAmountColor(transaction) {
+  if (transaction.isBalanceChange) {
+    // Use grey text for balance changes
+    return 'text-grey'
+  }
+
   if (transaction.isBudgetAllocation) {
     return 'budget-text'
   }
@@ -935,6 +983,16 @@ function formatDateTime(datetime) {
     minute: '2-digit',
     hour12: true,
   })
+}
+
+// Helper function to get balance change message
+function getBalanceChangeMessage(transaction) {
+  if (transaction.isBalanceChange && transaction.balanceChangeDetails) {
+    const oldBal = transaction.balanceChangeDetails.oldBalance
+    const newBal = transaction.balanceChangeDetails.newBalance
+    return `Changed from ₱${oldBal.toLocaleString()} to ₱${newBal.toLocaleString()}`
+  }
+  return ''
 }
 
 // Load expected tithes (10% of all salary)
@@ -1587,6 +1645,12 @@ onMounted(async () => {
     categoriesStore.loadCategories(),
     budgetsStore.loadBudgets(),
   ])
+
+  // Initialize default categories for new users if none exist
+  if (categoriesStore.categories.length === 0) {
+    console.log('Initializing default categories for new user...')
+    await categoriesStore.initializeDefaultCategories()
+  }
 
   // Load expected tithes
   await loadExpectedTithes()
