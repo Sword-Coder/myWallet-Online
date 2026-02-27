@@ -8,7 +8,7 @@ import { generateId } from 'src/utils/schemas'
 import { calculateBudgetSpending } from 'src/utils/dataUtils'
 
 export const useBudgetsStore = defineStore('budgets', () => {
-  const { getUserBudgets, getUserTransactions, saveDoc } = useDatabase()
+  const { getUserBudgets, getUserTransactions, saveDoc, deleteDoc } = useDatabase()
   const usersStore = useUsersStore()
   const categoriesStore = useCategoriesStore()
 
@@ -233,7 +233,8 @@ export const useBudgetsStore = defineStore('budgets', () => {
         throw new Error('Budget not found')
       }
 
-      await saveDoc({ ...budget, _deleted: true })
+      // Use proper deleteDoc function instead of _deleted flag
+      await deleteDoc(budget)
       budgets.value = budgets.value.filter((b) => b._id !== budgetId)
 
       // Update user's budgetIds array by removing the deleted budget ID

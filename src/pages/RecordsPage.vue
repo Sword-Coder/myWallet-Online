@@ -191,13 +191,28 @@
       />
     </q-page-sticky>
 
-    <!-- Transaction Creation Dialog -->
+    <!-- Transaction Creation/Edit Dialog -->
     <q-dialog v-model="showTransactionDialog" maximized>
       <q-card class="full-screen-dialog">
         <q-card-section class="dialog-header">
           <div class="row items-center">
-            <div class="text-h6">Add Transaction</div>
+            <div class="text-h6">
+              {{ selectedTransaction ? 'Edit Transaction' : 'Add Transaction' }}
+            </div>
             <q-space />
+            <!-- Delete button for existing transactions -->
+            <q-btn
+              v-if="selectedTransaction"
+              icon="delete"
+              flat
+              round
+              dense
+              color="negative"
+              @click="confirmDeleteTransaction"
+              class="q-mr-sm"
+            >
+              <q-tooltip>Delete Transaction</q-tooltip>
+            </q-btn>
             <q-btn icon="close" flat round dense v-close-popup />
           </div>
         </q-card-section>
@@ -1414,6 +1429,63 @@ function openEditDialog(transaction) {
   }
 
   showTransactionDialog.value = true
+}
+
+// Confirm and delete transaction
+function confirmDeleteTransaction() {
+  if (!selectedTransaction.value) {
+    return
+  }
+
+  $q.dialog({
+    title: 'Delete Transaction',
+    message: 'Are you sure you want to delete this transaction? This action cannot be undone.',
+    persistent: true,
+    ok: {
+      label: 'Delete',
+      color: 'negative',
+      flat: true,
+    },
+    cancel: {
+      label: 'Cancel',
+      color: 'primary',
+      flat: true,
+    },
+  }).onOk(async () => {
+    await deleteTransaction()
+  })
+}
+
+// Delete transaction
+async function deleteTransaction() {
+  if (!selectedTransaction.value) {
+    return
+  }
+
+  const transactionId = selectedTransaction.value._id
+
+  try {
+    // Call the store's deleteTransaction method
+    await financesStore.deleteTransaction(transactionId)
+
+    $q.notify({
+      type: 'positive',
+      message: 'Transaction deleted successfully!',
+    })
+
+    // Close the dialog and reset state
+    showTransactionDialog.value = false
+    selectedTransaction.value = null
+
+    // Refresh expected tithes after deletion
+    await loadExpectedTithes()
+  } catch (error) {
+    console.error('Error deleting transaction:', error)
+    $q.notify({
+      type: 'negative',
+      message: `Failed to delete transaction: ${error.message}`,
+    })
+  }
 }
 
 async function finishTransaction() {

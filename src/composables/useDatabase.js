@@ -202,29 +202,65 @@ export function useDatabase() {
     }
   }
 
-  // Enhanced delete function
-  async function deleteDoc(doc) {
+  // Enhanced delete function with proper revision handling
+  async function deleteDoc(doc, retryCount = 0) {
+    const maxRetries = 3
+
     try {
-      // Delete from local database first
-      await localDB.remove(doc)
-      console.log('Document deleted from local DB:', doc._id)
+      // Always fetch the latest document revision to avoid conflicts
+      let latestDoc
+      try {
+        latestDoc = await localDB.get(doc._id)
+        console.log('Delete: Retrieved latest document:', doc._id, 'rev:', latestDoc._rev)
+      } catch (getError) {
+        if (getError.name === 'not_found') {
+          console.log('Document already deleted or does not exist:', doc._id)
+          return // Document doesn't exist, nothing to delete
+        }
+        throw getError
+      }
+
+      // Delete from local database using the latest revision
+      await localDB.remove(latestDoc._id, latestDoc._rev)
+      console.log('Document deleted from local DB:', doc._id, 'rev:', latestDoc._rev)
 
       // For transactions, also try to delete from remote server
+      // Note: We don't throw if remote deletion fails - the sync will handle it
       if (doc.type === 'transaction') {
         try {
-          await remoteDB.remove(doc)
+          // First check if document exists on remote
+          const remoteDoc = await remoteDB.get(doc._id)
+          await remoteDB.remove(remoteDoc._id, remoteDoc._rev)
           console.log('Document deleted from remote server:', doc._id)
         } catch (remoteError) {
-          console.error('Failed to delete from remote server:', remoteError)
-          // Don't throw error here - local deletion succeeded
-          // The sync will handle retrying remote deletion
-          throw new Error(
-            'Transaction deleted locally but failed to delete from server. It will be synced when connection is restored.',
-          )
+          // Document might not exist on remote, or server error
+          if (remoteError.name === 'not_found') {
+            console.log(
+              'Document not found on remote server, already deleted or never synced:',
+              doc._id,
+            )
+          } else if (
+            remoteError.status === 500 ||
+            remoteError.message?.includes('internal_server_error')
+          ) {
+            console.warn('Remote server error during delete, will sync later:', remoteError.message)
+            // Don't throw - local deletion succeeded, sync will handle it
+          } else {
+            console.warn('Failed to delete from remote server:', remoteError.message)
+            // Don't throw - local deletion succeeded, sync will handle it
+          }
         }
       }
     } catch (localError) {
       console.error('Failed to delete from local DB:', localError)
+
+      // Handle conflict errors with retry
+      if (localError.name === 'conflict' && retryCount < maxRetries) {
+        console.log(`Delete conflict, retrying (${retryCount + 1}/${maxRetries})...`)
+        await new Promise((resolve) => setTimeout(resolve, 100 * (retryCount + 1)))
+        return deleteDoc(doc, retryCount + 1)
+      }
+
       throw localError // Re-throw local errors as they're critical
     }
   }
