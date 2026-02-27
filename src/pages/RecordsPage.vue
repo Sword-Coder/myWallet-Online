@@ -4,8 +4,21 @@
     <div class="row items-center justify-between q-mb-md">
       <div>
         <div class="text-h6 text-weight-bold">Records</div>
-        <div class="text-subtitle2 text-grey">Transactions For {{ currentMonth }}</div>
+        <div class="text-subtitle2 text-grey">Transactions For {{ periodLabel }}</div>
       </div>
+
+      <!-- Weekly/Monthly Filter -->
+      <q-option-group
+        v-model="filterMode"
+        :options="[
+          { label: 'Monthly', value: 'monthly' },
+          { label: 'Weekly', value: 'weekly' },
+        ]"
+        color="primary"
+        type="radio"
+        inline
+        class="q-mr-md"
+      />
 
       <!-- Wallet selector -->
       <q-select
@@ -597,7 +610,36 @@ const { budgets } = storeToRefs(budgetsStore)
 const { currentUser } = storeToRefs(usersStore)
 
 // Access computed properties directly from store instance
-const spiritualGiving = computed(() => financesStore.spiritualGiving)
+// Spiritual giving - filtered by selected period
+const spiritualGiving = computed(() => {
+  const spiritualCategories = ['Tithes', 'Offerings', 'Faith Promise']
+  const categoriesMap = categoriesStore.categories.reduce((map, cat) => {
+    map[cat.name] = cat._id
+    return map
+  }, {})
+
+  const spiritualCategoryIds = spiritualCategories
+    .map((name) => categoriesMap[name])
+    .filter((id) => id)
+
+  // Use filteredTransactions instead of all transactions
+  const spiritualTransactions = filteredTransactions.value.filter(
+    (t) => spiritualCategoryIds.includes(t.categoryId) && t.kind === 'expense',
+  )
+
+  return {
+    tithes: spiritualTransactions
+      .filter((t) => categoriesMap['Tithes'] === t.categoryId)
+      .reduce((sum, t) => sum + t.amount, 0),
+    offerings: spiritualTransactions
+      .filter((t) => categoriesMap['Offerings'] === t.categoryId)
+      .reduce((sum, t) => sum + t.amount, 0),
+    faithPromise: spiritualTransactions
+      .filter((t) => categoriesMap['Faith Promise'] === t.categoryId)
+      .reduce((sum, t) => sum + t.amount, 0),
+    total: spiritualTransactions.reduce((sum, t) => sum + t.amount, 0),
+  }
+})
 
 // 🔧 FIX: Watch for wallet changes to trigger reactivity
 watch(
@@ -676,6 +718,68 @@ const transferFromBudget = ref(false)
 
 // UI state
 const activeWallet = ref(null)
+
+// Filter mode state (weekly or monthly)
+const filterMode = ref('monthly') // 'monthly' or 'weekly'
+
+// Calculate current week date range (Sunday to Saturday)
+const currentWeekRange = computed(() => {
+  const now = new Date()
+  const dayOfWeek = now.getDay() // 0 = Sunday, 6 = Saturday
+
+  // Calculate Sunday (start of week)
+  const sunday = new Date(now)
+  sunday.setDate(now.getDate() - dayOfWeek)
+  sunday.setHours(0, 0, 0, 0)
+
+  // Calculate Saturday (end of week)
+  const saturday = new Date(now)
+  saturday.setDate(now.getDate() + (6 - dayOfWeek))
+  saturday.setHours(23, 59, 59, 999)
+
+  return {
+    start: sunday,
+    end: saturday,
+    startStr: sunday.toISOString(),
+    endStr: saturday.toISOString(),
+  }
+})
+
+// Filter transactions by current period
+const filteredTransactions = computed(() => {
+  const allTransactions = financesStore.transactions
+  const regularTransactions = allTransactions.filter((t) => !t.isBalanceChange)
+
+  if (filterMode.value === 'weekly') {
+    const weekStart = currentWeekRange.value.start
+    const weekEnd = currentWeekRange.value.end
+
+    return regularTransactions.filter((t) => {
+      const txDate = new Date(t.datetime)
+      return txDate >= weekStart && txDate <= weekEnd
+    })
+  }
+
+  // Monthly filter
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+
+  return regularTransactions.filter((t) => {
+    const txDate = new Date(t.datetime)
+    return txDate >= monthStart && txDate <= monthEnd
+  })
+})
+
+// Period label for display
+const periodLabel = computed(() => {
+  if (filterMode.value === 'weekly') {
+    const range = currentWeekRange.value
+    const options = { month: 'short', day: 'numeric' }
+    return `${range.start.toLocaleDateString('en-US', options)} - ${range.end.toLocaleDateString('en-US', options)}`
+  }
+  return currentMonth.value
+})
 
 // Expected tithes state
 const expectedTithes = ref(0)
@@ -794,21 +898,23 @@ const categoryOptions = computed(() => {
   }
 })
 
-// Recent transactions (at least 3, up to 10) - Most recent first
-const recentTransactions = computed(() => financesStore.getRecentTransactions(10))
+// Recent transactions - filtered by selected period (at least 3, up to 10) - Most recent first
+const recentTransactions = computed(() => {
+  const sorted = [...filteredTransactions.value].sort(
+    (a, b) => new Date(b.datetime) - new Date(a.datetime),
+  )
+  return sorted.slice(0, 10)
+})
 
 // Current month totals - exclude balance change transactions from regular income/expense
+// Now uses filteredTransactions based on weekly/monthly selection
 const incomeTotal = computed(() => {
-  const allTransactions = financesStore.transactions
-  const regularTransactions = allTransactions.filter((t) => !t.isBalanceChange)
-  return regularTransactions
+  return filteredTransactions.value
     .filter((t) => t.kind === 'income')
     .reduce((sum, t) => sum + t.amount, 0)
 })
 const expenseTotal = computed(() => {
-  const allTransactions = financesStore.transactions
-  const regularTransactions = allTransactions.filter((t) => !t.isBalanceChange)
-  return regularTransactions
+  return filteredTransactions.value
     .filter((t) => t.kind === 'expense')
     .reduce((sum, t) => sum + t.amount, 0)
 })
