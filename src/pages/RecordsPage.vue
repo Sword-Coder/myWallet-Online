@@ -553,12 +553,10 @@
             label="Save Transaction"
             @click="finishTransaction"
             :disable="
-              !form?.value?.amount ||
-              !form?.value?.categoryId ||
-              !form?.value?.walletId ||
-              (form?.value?.kind === 'income' &&
-                isInvestmentIncome.value &&
-                !investmentAmount.value)
+              !form?.amount ||
+              !form?.categoryId ||
+              !form?.walletId ||
+              (form?.kind === 'income' && isInvestmentIncome && !investmentAmount)
             "
             class="dialog-save-btn"
           />

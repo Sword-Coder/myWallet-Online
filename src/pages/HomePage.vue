@@ -143,10 +143,11 @@
           </div>
         </div>
       </div>
-      <!-- Debug info - remove in production -->
+      <!-- Debug info - remove in production
       <div class="text-caption text-grey q-mt-sm" style="font-size: 10px">
         Debug: walletBal={{ walletBalance }}, total={{ netTotal }}
       </div>
+      -->
     </q-card>
 
     <!-- Recent Transactions -->
@@ -445,10 +446,17 @@ const isNewUser = computed(() => {
 const shouldShowInitialBalancePrompt = computed(() => {
   if (!isNewUser.value) return false
 
-  // Check if wallet exists and has 0 or null balance
+  // Check if wallet exists
   if (validActiveWallet.value) {
-    const balance = validActiveWallet.value.balance
-    return balance === 0 || balance === null || balance === undefined
+    // Check if initialBalance has been explicitly set (even if it's 0)
+    // If initialBalance is defined, the user has already set their starting balance
+    // We check for !== undefined AND !== null to ensure it was explicitly set
+    const hasInitialBalance =
+      validActiveWallet.value.initialBalance !== undefined &&
+      validActiveWallet.value.initialBalance !== null
+
+    // Only show prompt if initialBalance was never set (user hasn't configured starting balance)
+    return !hasInitialBalance
   }
 
   // No wallet yet

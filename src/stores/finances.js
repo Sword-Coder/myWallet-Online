@@ -130,30 +130,9 @@ export const useFinancesStore = defineStore('finances', () => {
       wallets.value = userData.wallets || []
       transactions.value = userData.transactions || []
 
-      // 🔧 FIX: Check for wallets with incorrect initialBalance (0 when they should have a balance)
-      // This handles the case where initialBalance wasn't set properly when user entered starting amount
-      for (const wallet of wallets.value) {
-        if (wallet.balance !== undefined && wallet.balance !== null && wallet.balance !== 0) {
-          // Wallet has a balance - check if initialBalance is 0 or undefined
-          if (!wallet.initialBalance || wallet.initialBalance === 0) {
-            // This wallet needs its initialBalance fixed!
-            // Use the current balance as the initialBalance (user started with this amount)
-            console.log(
-              '🔧 FIXING: Wallet',
-              wallet._id,
-              'initialBalance was',
-              wallet.initialBalance,
-              'now setting to',
-              wallet.balance,
-            )
-            wallet.initialBalance = wallet.balance
-            // Save the fix
-            await saveDoc(wallet)
-            // Note: We don't create a balance change transaction here because
-            // fixing initialBalance is not a real transaction - it's just correcting data
-          }
-        }
-      }
+      // REMOVED: The auto-fix for initialBalance was causing double calculation
+      // The initialBalance should only be set when user explicitly sets their starting balance
+      // Creating a balance change transaction for initial balance causes double counting
 
       console.log('🔧 loadAll: AFTER assignment, wallets.value[0]:', {
         _id: wallets.value[0]?._id,

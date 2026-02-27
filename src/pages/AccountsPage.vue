@@ -332,18 +332,11 @@ async function saveWallet() {
         currency: 'PHP',
       }
 
-      // Update existing wallet - pass original balance for tracking
-      // Only create balance change transaction if there's an actual difference
-      if (originalInitialBalance !== newInitialBalance) {
-        await financesStore.updateWallet(
-          editingWallet.value._id,
-          walletData,
-          originalInitialBalance,
-        )
-      } else {
-        // Just save without triggering balance change
-        await financesStore.updateWallet(editingWallet.value._id, walletData)
-      }
+      // Update existing wallet - pass null to prevent creating balance change transaction
+      // When changing initial balance (Started With), we should NOT create a balance change transaction
+      // because the initialBalance IS the record of the starting amount
+      // Passing null prevents the creation of duplicate balance change transactions
+      await financesStore.updateWallet(editingWallet.value._id, walletData, null)
 
       // Reload all data to ensure consistency
       await financesStore.loadAll()
@@ -375,21 +368,9 @@ async function saveWallet() {
 
       await financesStore.addWallet(newWalletData)
 
-      // Create initial balance transaction if balance > 0
-      const initialBalance = Number(form.value.initialBalance) || 0
-      if (initialBalance > 0) {
-        const newWallet = financesStore.wallets.find(
-          (w) => w.name === form.value.name && w.ownerUserId === usersStore.currentUser._id,
-        )
-        if (newWallet) {
-          await financesStore.createBalanceChangeTransaction(
-            newWallet._id,
-            initialBalance,
-            0,
-            initialBalance,
-          )
-        }
-      }
+      // REMOVED: Creating a balance change transaction for initial balance causes double counting
+      // The initialBalance field in the wallet IS the record of the starting amount
+      // No separate transaction needed - the balance is calculated from initialBalance + transactions
 
       await financesStore.loadAll()
 
