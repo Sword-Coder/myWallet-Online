@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Database Cleanup Tool - Find by User ID</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pouchdb/8.0.1/pouchdb.min.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      h1 {
+        color: #333;
+      }
+      .config-section {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .config-section label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+      }
+      .config-section input {
+        width: 100%;
+        padding: 10px;
+        margin-bottom: 15px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      .btn {
+        padding: 12px 24px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        margin-right: 10px;
+      }
+      .btn-primary {
+        background: #1976d2;
+        color: white;
+      }
+      .btn-danger {
+        background: #dc3545;
+        color: white;
+      }
+      .btn-success {
+        background: #28a745;
+        color: white;
+      }
+      .btn:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+
+      .search-section {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .search-section input {
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 16px;
+        width: 300px;
+      }
+
+      .results-section {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .stats {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+      }
+      .stat-card {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 4px;
+        min-width: 150px;
+      }
+      .stat-card .count {
+        font-size: 24px;
+        font-weight: bold;
+      }
+      .stat-card .label {
+        color: #666;
+        font-size: 12px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+      }
+      th {
+        background: #f8f9fa;
+        font-weight: 600;
+      }
+      tr:hover {
+        background: #f8f9fa;
+      }
+      .type-badge {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .type-user {
+        background: #e3f2fd;
+        color: #1565c0;
+      }
+      .type-wallet {
+        background: #e8f5e9;
+        color: #2e7d32;
+      }
+      .type-category {
+        background: #fff3e0;
+        color: #ef6c00;
+      }
+      .type-transaction {
+        background: #fce4ec;
+        color: #c2185b;
+      }
+      .type-budget {
+        background: #f3e5f5;
+        color: #7b1fa2;
+      }
+
+      .checkbox-col {
+        width: 40px;
+      }
+      .actions-col {
+        width: 120px;
+      }
+
+      .loading {
+        color: #666;
+        font-style: italic;
+      }
+      .error {
+        color: #dc3545;
+        padding: 10px;
+        background: #ffe6e6;
+        border-radius: 4px;
+        margin-bottom: 10px;
+      }
+      .success {
+        color: #28a745;
+        padding: 10px;
+        background: #e6ffe6;
+        border-radius: 4px;
+        margin-bottom: 10px;
+      }
+
+      .log-area {
+        background: #1e1e1e;
+        color: #d4d4d4;
+        padding: 15px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 12px;
+        max-height: 200px;
+        overflow-y: auto;
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🗑️ Database Cleanup Tool</h1>
+    <p>Find and delete orphaned documents by user ID prefix</p>
+
+    <div class="config-section">
+      <h3>Database Configuration</h3>
+      <label>CouchDB URL:</label>
+      <input type="text" id="couchUrl" value="https://server.themission.site" />
+      <label>Database Name:</label>
+      <input type="text" id="dbName" value="mywallet_db" />
+      <label>Username:</label>
+      <input type="text" id="username" value="root" />
+      <label>Password:</label>
+      <input type="password" id="password" value="Sharpest2Mind" />
+      <button class="btn btn-primary" id="connectBtn">Connect to Database</button>
+      <span id="connectionStatus"></span>
+    </div>
+
+    <div class="search-section" id="searchSection" style="display: none">
+      <h3>Search Orphaned Documents</h3>
+      <p>
+        Enter a user ID prefix (e.g., <code>user_1772063818639</code> or just
+        <code>user_177206</code>)
+      </p>
+      <input type="text" id="userIdPrefix" placeholder="user_1772063818639" />
+      <button class="btn btn-primary" id="searchBtn">🔍 Search</button>
+      <button class="btn btn-success" id="selectAllBtn">Select All</button>
+      <button class="btn btn-danger" id="deleteBtn" disabled>🗑️ Delete Selected</button>
+      <span id="searchStatus"></span>
+    </div>
+
+    <div class="results-section" id="resultsSection" style="display: none">
+      <h3>Search Results</h3>
+      <div class="stats" id="stats"></div>
+      <table>
+        <thead>
+          <tr>
+            <th class="checkbox-col"><input type="checkbox" id="checkAll" /></th>
+            <th>Type</th>
+            <th>ID</th>
+            <th>Name</th>
+            <th>User Reference</th>
+            <th class="actions-col">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="resultsTable"></tbody>
+      </table>
+    </div>
+
+    <div class="log-area" id="logArea"></div>
+
+    <script>
+      // Wait for page to load
+      let db = null
+      let foundDocs = []
+      let userIdPrefix = ''
+
+      function log(msg) {
+        const logArea = document.getElementById('logArea')
+        const time = new Date().toLocaleTimeString()
+        logArea.innerHTML += `<div>[${time}] ${msg}</div>`
+        logArea.scrollTop = logArea.scrollHeight
+        console.log(msg)
+      }
+
+      // Initialize on load
+      document.getElementById('connectBtn').addEventListener('click', initDB)
+      document.getElementById('searchBtn').addEventListener('click', searchDocuments)
+      document.getElementById('selectAllBtn').addEventListener('click', selectAll)
+      document.getElementById('deleteBtn').addEventListener('click', deleteSelected)
+      document.getElementById('checkAll').addEventListener('change', toggleAll)
+
+      function initDB() {
+        const couchUrl = document.getElementById('couchUrl').value
+        const dbName = document.getElementById('dbName').value
+        const username = document.getElementById('username').value
+        const password = document.getElementById('password').value
+
+        log(`Connecting to ${couchUrl}/${dbName}...`)
+
+        try {
+          db = new PouchDB(`${couchUrl}/${dbName}`, {
+            auth: { username, password },
+          })
+
+          db.info()
+            .then((info) => {
+              log(`✅ Connected! Database: ${info.db_name}, Doc count: ${info.doc_count}`)
+              document.getElementById('connectionStatus').innerHTML =
+                ' <span style="color:green">✅ Connected</span>'
+              document.getElementById('searchSection').style.display = 'block'
+            })
+            .catch((err) => {
+              log(`❌ Connection failed: ${err.message}`)
+              document.getElementById('connectionStatus').innerHTML =
+                ' <span style="color:red">❌ Failed: ' + err.message + '</span>'
+            })
+        } catch (err) {
+          log(`❌ Error: ${err.message}`)
+        }
+      }
+
+      async function searchDocuments() {
+        userIdPrefix = document.getElementById('userIdPrefix').value.trim()
+        if (!userIdPrefix) {
+          alert('Please enter a user ID prefix')
+          return
+        }
+
+        if (!db) {
+          alert('Please connect to the database first')
+          return
+        }
+
+        log(`Searching for documents with prefix: ${userIdPrefix}`)
+        document.getElementById('searchStatus').innerHTML =
+          '<span class="loading">Searching...</span>'
+        foundDocs = []
+
+        try {
+          // Get all docs and filter client-side
+          const allDocs = await db.allDocs({ include_docs: true })
+
+          const prefix = userIdPrefix.toLowerCase()
+
+          // Filter documents that match any of these patterns
+          foundDocs = allDocs.rows
+            .map((row) => row.doc)
+            .filter((doc) => {
+              if (!doc) return false
+              const docId = (doc._id || '').toLowerCase()
+
+              // Check if _id starts with prefix
+              if (docId.startsWith(prefix)) return true
+
+              // Check createdByUserId
+              if (doc.createdByUserId && doc.createdByUserId.toLowerCase().startsWith(prefix))
+                return true
+
+              // Check ownerUserId
+              if (doc.ownerUserId && doc.ownerUserId.toLowerCase().startsWith(prefix)) return true
+
+              // Check userId
+              if (doc.userId && doc.userId.toLowerCase().startsWith(prefix)) return true
+
+              // Check sharedWithUserIds array
+              if (doc.sharedWithUserIds && Array.isArray(doc.sharedWithUserIds)) {
+                for (const uid of doc.sharedWithUserIds) {
+                  if (uid && uid.toLowerCase().startsWith(prefix)) return true
+                }
+              }
+
+              return false
+            })
+
+          log(`Found ${foundDocs.length} documents`)
+          displayResults()
+          document.getElementById('searchStatus').innerHTML =
+            `<span class="success">Found ${foundDocs.length} documents</span>`
+        } catch (err) {
+          log(`Search error: ${err.message}`)
+          document.getElementById('searchStatus').innerHTML =
+            `<span class="error">Error: ${err.message}</span>`
+        }
+      }
+
+      function displayResults() {
+        document.getElementById('resultsSection').style.display = 'block'
+
+        // Calculate stats by type
+        const stats = {}
+        foundDocs.forEach((doc) => {
+          const type = doc.type || 'unknown'
+          stats[type] = (stats[type] || 0) + 1
+        })
+
+        let statsHtml =
+          '<div class="stat-card"><div class="count">' +
+          foundDocs.length +
+          '</div><div class="label">Total Documents</div></div>'
+        for (const [type, count] of Object.entries(stats)) {
+          statsHtml += `<div class="stat-card"><div class="count">${count}</div><div class="label">${type}</div></div>`
+        }
+        document.getElementById('stats').innerHTML = statsHtml
+
+        const prefix = userIdPrefix.toLowerCase()
+
+        // Build table
+        let tableHtml = ''
+        foundDocs.forEach((doc, idx) => {
+          const type = doc.type || 'unknown'
+          const typeClass = 'type-' + type
+
+          // Find which field contains the user ID
+          let userRef = '-'
+          if (doc._id && doc._id.toLowerCase().startsWith(prefix)) userRef = '_id'
+          else if (doc.createdByUserId && doc.createdByUserId.toLowerCase().startsWith(prefix))
+            userRef = 'createdByUserId'
+          else if (doc.ownerUserId && doc.ownerUserId.toLowerCase().startsWith(prefix))
+            userRef = 'ownerUserId'
+          else if (doc.userId && doc.userId.toLowerCase().startsWith(prefix)) userRef = 'userId'
+
+          tableHtml += `
+          <tr>
+            <td><input type="checkbox" class="doc-check" data-idx="${idx}"></td>
+            <td><span class="type-badge ${typeClass}">${type}</span></td>
+            <td><code>${doc._id}</code></td>
+            <td>${doc.name || doc.email || '-'}</td>
+            <td>${userRef}</td>
+            <td>
+              <button class="btn btn-danger" style="padding:4px 8px;font-size:12px" onclick="deleteOne(${idx})">Delete</button>
+            </td>
+          </tr>
+        `
+        })
+
+        document.getElementById('resultsTable').innerHTML = tableHtml
+        document.getElementById('deleteBtn').disabled = foundDocs.length === 0
+      }
+
+      function selectAll() {
+        document.querySelectorAll('.doc-check').forEach((cb) => (cb.checked = true))
+      }
+
+      function toggleAll(source) {
+        document.querySelectorAll('.doc-check').forEach((cb) => (cb.checked = source.checked))
+      }
+
+      async function deleteOne(idx) {
+        const doc = foundDocs[idx]
+        if (!confirm(`Delete document "${doc._id}"?`)) return
+
+        try {
+          await db.remove(doc._id, doc._rev)
+          log(`✅ Deleted: ${doc._id}`)
+          foundDocs.splice(idx, 1)
+          displayResults()
+        } catch (err) {
+          log(`❌ Delete failed: ${err.message}`)
+        }
+      }
+
+      async function deleteSelected() {
+        const checkboxes = document.querySelectorAll('.doc-check:checked')
+        if (checkboxes.length === 0) {
+          alert('Please select documents to delete')
+          return
+        }
+
+        if (!confirm(`Delete ${checkboxes.length} documents? This cannot be undone!`)) return
+
+        let successCount = 0
+        let failCount = 0
+
+        // Collect indices to delete
+        const indicesToDelete = []
+        checkboxes.forEach((cb) => {
+          indicesToDelete.push(parseInt(cb.dataset.idx))
+        })
+
+        // Sort in reverse order so splicing doesn't mess up indices
+        indicesToDelete.sort((a, b) => b - a)
+
+        for (const idx of indicesToDelete) {
+          const doc = foundDocs[idx]
+
+          try {
+            await db.remove(doc._id, doc._rev)
+            log(`✅ Deleted: ${doc._id}`)
+            successCount++
+          } catch (err) {
+            log(`❌ Failed to delete ${doc._id}: ${err.message}`)
+            failCount++
+          }
+        }
+
+        log(`Delete complete: ${successCount} success, ${failCount} failed`)
+        searchDocuments() // Refresh results
+      }
+    </script>
+  </body>
+</html>
