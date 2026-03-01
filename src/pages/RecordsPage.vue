@@ -7,6 +7,25 @@
         <div class="text-subtitle2 text-grey">Transactions For {{ periodLabel }}</div>
       </div>
 
+      <!-- Month Navigation (visible in monthly mode) -->
+      <div v-if="filterMode === 'monthly'" class="row items-center q-gutter-xs q-mr-md">
+        <q-btn flat round dense icon="chevron_left" color="primary" @click="previousMonth">
+          <q-tooltip>Previous Month</q-tooltip>
+        </q-btn>
+        <q-btn flat dense color="primary" :label="periodLabel" class="month-label-btn" />
+        <q-btn
+          flat
+          round
+          dense
+          icon="chevron_right"
+          color="primary"
+          :disable="!canGoNext"
+          @click="nextMonth"
+        >
+          <q-tooltip>Next Month</q-tooltip>
+        </q-btn>
+      </div>
+
       <!-- Weekly/Monthly Filter -->
       <q-option-group
         v-model="filterMode"
@@ -737,26 +756,61 @@ const activeWallet = ref(null)
 // Filter mode state (weekly or monthly)
 const filterMode = ref('monthly') // 'monthly' or 'weekly'
 
-// Calculate current week date range (Sunday to Saturday)
+// Selected month/year for navigation
+const selectedMonth = ref(new Date().getMonth())
+const selectedYear = ref(new Date().getFullYear())
+
+// Go to previous month
+const previousMonth = () => {
+  if (selectedMonth.value === 0) {
+    selectedMonth.value = 11
+    selectedYear.value--
+  } else {
+    selectedMonth.value--
+  }
+}
+
+// Go to next month
+const nextMonth = () => {
+  if (selectedMonth.value === 11) {
+    selectedMonth.value = 0
+    selectedYear.value++
+  } else {
+    selectedMonth.value++
+  }
+}
+
+// Check if we can go to next month (don't allow future months)
+const canGoNext = computed(() => {
+  const now = new Date()
+  return (
+    selectedYear.value < now.getFullYear() ||
+    (selectedYear.value === now.getFullYear() && selectedMonth.value < now.getMonth())
+  )
+})
+
+// Calculate current week date range (Monday to Sunday)
 const currentWeekRange = computed(() => {
   const now = new Date()
-  const dayOfWeek = now.getDay() // 0 = Sunday, 6 = Saturday
+  const dayOfWeek = now.getDay() // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
 
-  // Calculate Sunday (start of week)
+  // Calculate Monday (start of week)
+  // If today is Sunday (0), go back 6 days. Otherwise, go back (dayOfWeek - 1) days
+  const monday = new Date(now)
+  monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
+  monday.setHours(0, 0, 0, 0)
+
+  // Calculate Sunday (end of week)
+  // If today is Sunday (0), it's today. Otherwise, add (7 - dayOfWeek) days
   const sunday = new Date(now)
-  sunday.setDate(now.getDate() - dayOfWeek)
-  sunday.setHours(0, 0, 0, 0)
-
-  // Calculate Saturday (end of week)
-  const saturday = new Date(now)
-  saturday.setDate(now.getDate() + (6 - dayOfWeek))
-  saturday.setHours(23, 59, 59, 999)
+  sunday.setDate(now.getDate() + (dayOfWeek === 0 ? 0 : 7 - dayOfWeek))
+  sunday.setHours(23, 59, 59, 999)
 
   return {
-    start: sunday,
-    end: saturday,
-    startStr: sunday.toISOString(),
-    endStr: saturday.toISOString(),
+    start: monday,
+    end: sunday,
+    startStr: monday.toISOString(),
+    endStr: sunday.toISOString(),
   }
 })
 
@@ -775,10 +829,9 @@ const filteredTransactions = computed(() => {
     })
   }
 
-  // Monthly filter
-  const now = new Date()
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+  // Monthly filter - use selected month/year
+  const monthStart = new Date(selectedYear.value, selectedMonth.value, 1)
+  const monthEnd = new Date(selectedYear.value, selectedMonth.value + 1, 0, 23, 59, 59)
 
   return regularTransactions.filter((t) => {
     const txDate = new Date(t.datetime)
@@ -793,7 +846,9 @@ const periodLabel = computed(() => {
     const options = { month: 'short', day: 'numeric' }
     return `${range.start.toLocaleDateString('en-US', options)} - ${range.end.toLocaleDateString('en-US', options)}`
   }
-  return currentMonth.value
+  // Monthly - show selected month and year
+  const date = new Date(selectedYear.value, selectedMonth.value, 1)
+  return date.toLocaleString('default', { month: 'long', year: 'numeric' })
 })
 
 // Expected tithes state
@@ -838,10 +893,6 @@ watch(
 )
 
 // Computed properties
-const currentMonth = computed(() =>
-  new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
-)
-
 const walletOptions = computed(() => {
   // Only show "All Wallets" if user has multiple wallets AND sharing is enabled
   const hasMultipleWallets = (wallets.value || []).length > 1
@@ -2097,6 +2148,14 @@ onMounted(async () => {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* Month label button styling */
+.month-label-btn {
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 4px 12px;
+  min-width: 120px;
 }
 
 /* Mobile responsive design */
