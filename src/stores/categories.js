@@ -246,6 +246,14 @@ export const useCategoriesStore = defineStore('categories', () => {
     if (categories.value.length === 0 && usersStore.currentUser) {
       const defaultCategories = [
         {
+          name: 'Budgeted',
+          kind: 'income',
+          icon: 'account_balance_wallet',
+          color: 'blue-5',
+          description: 'Budget allocation category for transfers',
+          isShared: true,
+        },
+        {
           name: 'Tithes',
           kind: 'expense',
           icon: 'volunteer_activism',
