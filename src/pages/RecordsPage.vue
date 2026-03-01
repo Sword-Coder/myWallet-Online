@@ -26,6 +26,35 @@
         </q-btn>
       </div>
 
+      <!-- Week Navigation (visible in weekly mode) -->
+      <div v-if="filterMode === 'weekly'" class="row items-center q-gutter-xs q-mr-md">
+        <q-btn flat round dense icon="chevron_left" color="primary" @click="previousMonth">
+          <q-tooltip>Previous Month</q-tooltip>
+        </q-btn>
+        <q-select
+          v-model="selectedWeekIndex"
+          :options="monthWeeks"
+          option-label="label"
+          option-value="index"
+          emit-value
+          map-options
+          dense
+          outlined
+          style="min-width: 200px"
+        />
+        <q-btn
+          flat
+          round
+          dense
+          icon="chevron_right"
+          color="primary"
+          :disable="!canGoNext"
+          @click="nextMonth"
+        >
+          <q-tooltip>Next Month</q-tooltip>
+        </q-btn>
+      </div>
+
       <!-- Weekly/Monthly Filter -->
       <q-option-group
         v-model="filterMode"
@@ -760,6 +789,107 @@ const filterMode = ref('monthly') // 'monthly' or 'weekly'
 const selectedMonth = ref(new Date().getMonth())
 const selectedYear = ref(new Date().getFullYear())
 
+// Selected week index within the selected month
+const selectedWeekIndex = ref(0)
+
+// Calculate all weeks for the selected month
+const monthWeeks = computed(() => {
+  const year = selectedYear.value
+  const month = selectedMonth.value
+
+  // Get first day of month
+  const firstDay = new Date(year, month, 1)
+  const lastDay = new Date(year, month + 1, 0)
+
+  const weeks = []
+  let currentDate = new Date(firstDay)
+
+  // Find first Monday (or Sunday depending on start) before or on first day
+  const dayOfWeek = currentDate.getDay()
+  // Adjust to start from Monday (modify if you want Sunday start)
+  // Using Monday to Sunday as discussed earlier
+  const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+  currentDate.setDate(currentDate.getDate() - daysToSubtract)
+
+  let weekNum = 0
+  while (currentDate <= lastDay || weekNum < 5) {
+    const weekStart = new Date(currentDate)
+    const weekEnd = new Date(currentDate)
+    weekEnd.setDate(weekEnd.getDate() + 6)
+
+    // Only add weeks that overlap with the selected month
+    const weekMonthStart = weekStart.getMonth()
+    const weekMonthEnd = weekEnd.getMonth()
+
+    if (
+      weekMonthStart === month ||
+      weekMonthEnd === month ||
+      (weekMonthStart > month && weekMonthEnd > month && weekNum < 5)
+    ) {
+      weeks.push({
+        index: weekNum,
+        start: weekStart,
+        end: weekEnd,
+        label: `Week ${weekNum + 1}: ${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+      })
+    }
+
+    currentDate.setDate(currentDate.getDate() + 7)
+    weekNum++
+
+    // Safety limit
+    if (weekNum > 6) break
+  }
+
+  return weeks
+})
+
+// Current week range - now uses selected month/year when in weekly mode
+const currentWeekRange = computed(() => {
+  // If in monthly mode, use current date
+  if (filterMode.value === 'monthly') {
+    const now = new Date()
+    return calculateWeekRange(now)
+  }
+
+  // In weekly mode, use selected week from selected month
+  const week = monthWeeks.value[selectedWeekIndex.value]
+  if (week) {
+    return {
+      start: week.start,
+      end: week.end,
+      startStr: week.start.toISOString(),
+      endStr: week.end.toISOString(),
+    }
+  }
+
+  // Fallback
+  return calculateWeekRange(new Date())
+})
+
+// Helper function to calculate week range from a date
+function calculateWeekRange(date) {
+  const now = new Date(date)
+  const dayOfWeek = now.getDay() // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+
+  // Calculate Monday (start of week) - Monday to Sunday
+  const monday = new Date(now)
+  monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
+  monday.setHours(0, 0, 0, 0)
+
+  // Calculate Sunday (end of week)
+  const sunday = new Date(now)
+  sunday.setDate(now.getDate() + (dayOfWeek === 0 ? 0 : 7 - dayOfWeek))
+  sunday.setHours(23, 59, 59, 999)
+
+  return {
+    start: monday,
+    end: sunday,
+    startStr: monday.toISOString(),
+    endStr: sunday.toISOString(),
+  }
+}
+
 // Go to previous month
 const previousMonth = () => {
   if (selectedMonth.value === 0) {
@@ -787,31 +917,6 @@ const canGoNext = computed(() => {
     selectedYear.value < now.getFullYear() ||
     (selectedYear.value === now.getFullYear() && selectedMonth.value < now.getMonth())
   )
-})
-
-// Calculate current week date range (Monday to Sunday)
-const currentWeekRange = computed(() => {
-  const now = new Date()
-  const dayOfWeek = now.getDay() // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-
-  // Calculate Monday (start of week)
-  // If today is Sunday (0), go back 6 days. Otherwise, go back (dayOfWeek - 1) days
-  const monday = new Date(now)
-  monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
-  monday.setHours(0, 0, 0, 0)
-
-  // Calculate Sunday (end of week)
-  // If today is Sunday (0), it's today. Otherwise, add (7 - dayOfWeek) days
-  const sunday = new Date(now)
-  sunday.setDate(now.getDate() + (dayOfWeek === 0 ? 0 : 7 - dayOfWeek))
-  sunday.setHours(23, 59, 59, 999)
-
-  return {
-    start: monday,
-    end: sunday,
-    startStr: monday.toISOString(),
-    endStr: sunday.toISOString(),
-  }
 })
 
 // Filter transactions by current period
@@ -927,8 +1032,28 @@ const budgetWalletOptions = computed(() => {
 })
 
 // Dynamic category options based on transaction type and transfer direction
+// Now relies solely on the 'kind' property from categories
 const categoryOptions = computed(() => {
-  if (form?.value?.kind === 'transfer') {
+  const transactionKind = form?.value?.kind
+
+  if (transactionKind === 'income') {
+    // Show only income categories (categories with kind === 'income')
+    return (categories.value || []).filter((cat) => cat.kind === 'income')
+  } else if (transactionKind === 'expense') {
+    // Show expense categories (categories with kind === 'expense')
+    return (categories.value || []).filter((cat) => cat.kind === 'expense')
+  } else if (transactionKind === 'transfer') {
+    // For transfer, show "Budgeted" category as the primary option
+    // This allows users to allocate funds to their budgets
+    const budgetedCategory = (categories.value || []).find(
+      (cat) => cat.name.toLowerCase() === 'budgeted',
+    )
+
+    if (budgetedCategory) {
+      return [budgetedCategory]
+    }
+
+    // If no "Budgeted" category exists, show active budgets as fallback
     if (transferFromBudget.value) {
       // When transferring from budget to wallet, show wallets as category options
       return (wallets.value || []).map((wallet) => ({
@@ -937,7 +1062,7 @@ const categoryOptions = computed(() => {
         type: 'wallet',
       }))
     } else {
-      // When transferring from wallet to budget, show active budgets as before
+      // When transferring from wallet to budget, show active budgets
       const activeBudgets = (budgets.value || []).filter((budget) => {
         const now = new Date()
         const budgetStart = new Date(budget.periodStart)
@@ -959,7 +1084,7 @@ const categoryOptions = computed(() => {
       })
     }
   } else {
-    // For income/expense, show regular categories
+    // Default: show all categories
     return categories.value || []
   }
 })
