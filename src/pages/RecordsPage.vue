@@ -673,7 +673,8 @@ const { budgets } = storeToRefs(budgetsStore)
 const { currentUser } = storeToRefs(usersStore)
 
 // Access computed properties directly from store instance
-// Spiritual giving - filtered by selected period
+// 🔧 FIXED: Spiritual giving - filtered by selected period for weekly/monthly view
+// When weekly filter is active, show tithes for that week only
 const spiritualGiving = computed(() => {
   const spiritualCategories = ['Tithes', 'Offerings', 'Faith Promise']
   const categoriesMap = categoriesStore.categories.reduce((map, cat) => {
@@ -685,7 +686,7 @@ const spiritualGiving = computed(() => {
     .map((name) => categoriesMap[name])
     .filter((id) => id)
 
-  // Use filteredTransactions instead of all transactions
+  // Use filteredTransactions to only show spiritual giving for the selected period
   const spiritualTransactions = filteredTransactions.value.filter(
     (t) => spiritualCategoryIds.includes(t.categoryId) && t.kind === 'expense',
   )
@@ -956,8 +957,16 @@ const periodLabel = computed(() => {
   return date.toLocaleString('default', { month: 'long', year: 'numeric' })
 })
 
-// Expected tithes state
-const expectedTithes = ref(0)
+// Expected tithes - calculated based on filtered period's income (weekly/monthly)
+const expectedTithes = computed(() => {
+  // Get income for the filtered period (same as incomeTotal uses)
+  const periodIncome = filteredTransactions.value
+    .filter((t) => t.kind === 'income')
+    .reduce((sum, t) => sum + t.amount, 0)
+
+  // 10% of the period's income
+  return Math.round(periodIncome * 0.1)
+})
 
 // Auto-budget state
 const activeAutoBudgeters = ref([])
@@ -1288,15 +1297,6 @@ function getBalanceChangeMessage(transaction) {
     return `Changed from ₱${oldBal.toLocaleString()} to ₱${newBal.toLocaleString()}`
   }
   return ''
-}
-
-// Load expected tithes (10% of all salary)
-async function loadExpectedTithes() {
-  try {
-    expectedTithes.value = await budgetsStore.calculateExpectedTithes()
-  } catch {
-    expectedTithes.value = 0
-  }
 }
 
 // Check for active auto-budgeters
@@ -1654,9 +1654,6 @@ async function deleteTransaction() {
     // Close the dialog and reset state
     showTransactionDialog.value = false
     selectedTransaction.value = null
-
-    // Refresh expected tithes after deletion
-    await loadExpectedTithes()
   } catch (error) {
     console.error('Error deleting transaction:', error)
     $q.notify({
@@ -1773,7 +1770,9 @@ async function finishTransaction() {
 
       // Refresh expected tithes if this was an income transaction
       if (transactionData.kind === 'income') {
-        await loadExpectedTithes()
+        // Expected tithes is now a computed property based on filtered transactions
+        // No need to manually refresh - it will update automatically
+        console.log('✅ Expected tithes will auto-update based on filtered transactions')
       }
 
       // Add a delay to ensure database indexes changes, then reload
@@ -1816,7 +1815,9 @@ async function finishTransaction() {
 
       // Refresh expected tithes after any transaction, especially income
       if (form?.value?.kind === 'income') {
-        await loadExpectedTithes()
+        // Expected tithes is now a computed property based on filtered transactions
+        // No need to manually refresh - it will update automatically
+        console.log('✅ Expected tithes will auto-update based on filtered transactions')
       }
 
       $q.notify({ type: 'positive', message: 'Transaction added successfully!' })
@@ -1984,7 +1985,9 @@ onMounted(async () => {
   }
 
   // Load expected tithes
-  await loadExpectedTithes()
+  // Expected tithes is now a computed property based on filtered transactions
+  // No need to manually load - it will calculate automatically
+  console.log('✅ Expected tithes is now a computed property based on filtered transactions')
 
   // Check for active auto-budgeters
   await checkActiveAutoBudgeters()
