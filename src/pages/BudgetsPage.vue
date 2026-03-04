@@ -2103,6 +2103,7 @@ async function createBudgetAllocationTransaction(budgetId, amount, categoryName)
     // Prepare transaction data
     const transactionData = {
       walletId: selectedWallet.value,
+      userId: usersStore.currentUser._id, // 🔧 FIX: Add userId
       kind: 'transfer', // Use transfer kind
       amount: Number(amount),
       categoryId: budgetedCategory._id,

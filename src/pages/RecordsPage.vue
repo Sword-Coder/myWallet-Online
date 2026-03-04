@@ -1449,6 +1449,7 @@ async function createAutoBudgetAllocationTransaction(categoryName, amount, alloc
     // Create budget allocation transaction
     const allocationTransaction = {
       walletId: form.value.walletId,
+      userId: usersStore.currentUser._id, // 🔧 FIX: Add userId
       kind: 'transfer',
       amount: Number(amount),
       categoryId: category._id,
@@ -1491,6 +1492,7 @@ async function createTithesTransaction(amount) {
     // Create regular expense transaction for tithes
     const tithesTransaction = {
       walletId: form.value.walletId,
+      userId: usersStore.currentUser._id, // 🔧 FIX: Add userId
       kind: 'expense',
       amount: Number(amount),
       categoryId: tithesCategory._id,
@@ -1708,6 +1710,7 @@ async function finishTransaction() {
   try {
     const transactionData = {
       walletId: form.value.walletId,
+      userId: usersStore.currentUser._id, // 🔧 FIX: Add userId to ensure transaction is queryable
       kind: form.value.kind,
       amount: amount,
       categoryId: form.value.categoryId,
@@ -1773,11 +1776,38 @@ async function finishTransaction() {
         await loadExpectedTithes()
       }
 
+      // Add a delay to ensure database indexes changes, then reload
+      console.log('⏳ Adding delay for database indexing...')
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      console.log('🔄 Now reloading data...')
+      await financesStore.loadAll()
+      console.log('✅ Data reloaded after update')
+
       $q.notify({ type: 'positive', message: 'Transaction updated successfully!' })
     } else {
       // Create new transaction
       console.log('Creating new transaction:', transactionData)
-      await financesStore.addTransaction(transactionData)
+      console.log('Current user:', usersStore.currentUser)
+
+      if (!usersStore.currentUser) {
+        $q.notify({
+          type: 'negative',
+          message: 'User not logged in. Please refresh and log in.',
+        })
+        return
+      }
+
+      try {
+        await financesStore.addTransaction(transactionData)
+        console.log('✅ Transaction saved successfully')
+      } catch (saveError) {
+        console.error('❌ Error saving transaction:', saveError)
+        $q.notify({
+          type: 'negative',
+          message: 'Failed to save transaction: ' + saveError.message,
+        })
+        return // Don't close dialog if save failed
+      }
 
       // Handle auto-budget allocation for income transactions
       if (form?.value?.kind === 'income' && selectedAutoBudgeter.value) {
@@ -1790,67 +1820,16 @@ async function finishTransaction() {
       }
 
       $q.notify({ type: 'positive', message: 'Transaction added successfully!' })
+
+      // 🔧 FIX: Don't call loadAll() - the transaction is already in memory from addTransaction
+      // PouchDB .find() requires indexing which takes time, causing new transactions to be missed
+      // Since we've already added the transaction to the store and updated transactionIds,
+      // the UI will reflect the changes without needing a database reload
+      console.log('✅ Transaction saved - data already in memory, skipping database reload')
     }
 
     showTransactionDialog.value = false
     selectedTransaction.value = null
-
-    // 🔧 ENHANCED: Refresh all related data when transfers happen
-    if (form?.value?.kind === 'transfer') {
-      console.log('🔄 Transfer completed, refreshing all related data...')
-
-      // 🔧 NEW: Update budget document if this is a budget withdrawal or allocation
-      if (transactionData.budgetId) {
-        console.log('💰 Budget transaction detected, updating budget document...')
-
-        const budgetToUpdate = budgets.value.find((b) => b._id === transactionData.budgetId)
-        if (budgetToUpdate) {
-          let newBudgetAmount = budgetToUpdate.amount
-
-          if (transactionData.isBudgetWithdrawal) {
-            // Money leaving budget: reduce budget amount
-            newBudgetAmount = Math.max(0, budgetToUpdate.amount - amount)
-            console.log(`💸 Budget withdrawal: ${budgetToUpdate.amount} → ${newBudgetAmount}`)
-          } else if (transactionData.isBudgetAllocation) {
-            // Money going to budget: increase budget amount
-            newBudgetAmount = budgetToUpdate.amount + amount
-            console.log(`💰 Budget allocation: ${budgetToUpdate.amount} → ${newBudgetAmount}`)
-          }
-
-          try {
-            await budgetsStore.updateBudget(transactionData.budgetId, {
-              amount: newBudgetAmount,
-              updatedAt: new Date().toISOString(),
-            })
-
-            const action = transactionData.isBudgetWithdrawal ? 'withdrawal' : 'allocation'
-            console.log(
-              `✅ Budget ${action} completed: ${budgetToUpdate.amount} → ${newBudgetAmount}`,
-            )
-
-            $q.notify({
-              type: 'positive',
-              message: `Budget ${action}: ₱${budgetToUpdate.amount.toLocaleString()} → ₱${newBudgetAmount.toLocaleString()}`,
-              timeout: 3000,
-            })
-          } catch (budgetUpdateError) {
-            console.error('❌ Failed to update budget document:', budgetUpdateError)
-            $q.notify({
-              type: 'warning',
-              message: 'Transfer completed but budget update failed',
-              caption: 'Please refresh budgets manually',
-            })
-          }
-        }
-      }
-
-      await Promise.all([
-        budgetsStore.refreshBudgetSpent(),
-        budgetsStore.loadBudgets(), // Force reload budgets with updated amounts
-        financesStore.loadAll(), // Reload transactions to update calculations
-      ])
-      console.log('✅ All data refreshed after transfer')
-    }
   } catch (error) {
     console.error('Error saving transaction:', error)
     console.error('Error details:', {

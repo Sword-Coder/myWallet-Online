@@ -49,7 +49,21 @@ export const useFinancesStore = defineStore('finances', () => {
         storedIdsList: storedTransactionIds,
       })
 
-      // Check if there's a mismatch
+      // 🔧 FIX: Only sync DOWN from stored to actual (don't remove IDs that aren't indexed yet)
+      // This prevents newly created transactions from being removed due to PouchDB indexing delays
+      // The stored IDs might include transactions that haven't been indexed yet
+      const missingInDb = storedTransactionIds.filter((id) => !actualTransactionIds.includes(id))
+
+      if (missingInDb.length > 0) {
+        console.log('FinancesStore: Found IDs in stored list but not in DB:', missingInDb.length)
+        console.log('FinancesStore: These may be new transactions not yet indexed - keeping them')
+        // Don't remove these IDs - they may just need more time to be indexed
+        // The transaction is already in memory, so we keep tracking it
+        console.log('FinancesStore: TransactionIds sync skipped - allowing time for indexing')
+        return
+      }
+
+      // Check if there's a mismatch the other way (DB has more than stored)
       const hasMismatch =
         actualTransactionIds.length !== storedTransactionIds.length ||
         actualTransactionIds.some((id) => !storedTransactionIds.includes(id))
@@ -128,7 +142,35 @@ export const useFinancesStore = defineStore('finances', () => {
       })
 
       wallets.value = userData.wallets || []
-      transactions.value = userData.transactions || []
+
+      // 🔧 FIX: Include transactions from stored IDs that may not be in DB query yet
+      // This handles the PouchDB indexing delay - new transactions might not appear in queries immediately
+      const dbTransactionIds = (userData.transactions || []).map((t) => t._id)
+      const storedTransactionIds = usersStore.currentUser.transactionIds || []
+      const missingFromDb = storedTransactionIds.filter((id) => !dbTransactionIds.includes(id))
+
+      let loadedTransactions = userData.transactions || []
+
+      if (missingFromDb.length > 0) {
+        console.log(
+          '🔧 loadAll: Found transactions in stored IDs but not in DB query:',
+          missingFromDb.length,
+        )
+        // Try to fetch these missing transactions directly from the database
+        for (const missingId of missingFromDb) {
+          try {
+            const missingDoc = await localDB.get(missingId)
+            console.log('🔧 loadAll: Found missing transaction:', missingId)
+            loadedTransactions.push(missingDoc)
+          } catch (err) {
+            if (err.name !== 'not_found') {
+              console.warn('🔧 loadAll: Error fetching missing transaction:', missingId, err)
+            }
+          }
+        }
+      }
+
+      transactions.value = loadedTransactions
 
       // REMOVED: The auto-fix for initialBalance was causing double calculation
       // The initialBalance should only be set when user explicitly sets their starting balance
