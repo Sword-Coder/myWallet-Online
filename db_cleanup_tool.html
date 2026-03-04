@@ -155,7 +155,7 @@
         width: 40px;
       }
       .actions-col {
-        width: 120px;
+        width: 160px;
       }
 
       .loading {
@@ -187,6 +187,83 @@
         max-height: 200px;
         overflow-y: auto;
         margin-top: 20px;
+      }
+
+      /* Modal/Dialog Styles */
+      .modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+      }
+      .modal-overlay.active {
+        display: flex;
+      }
+      .modal-content {
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        max-width: 700px;
+        max-height: 80vh;
+        overflow-y: auto;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      }
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #ddd;
+      }
+      .modal-header h2 {
+        margin: 0;
+        color: #333;
+      }
+      .modal-close {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #666;
+      }
+      .modal-close:hover {
+        color: #333;
+      }
+      .detail-section {
+        margin-bottom: 15px;
+      }
+      .detail-section h3 {
+        margin: 0 0 8px 0;
+        font-size: 14px;
+        color: #666;
+        text-transform: uppercase;
+      }
+      .detail-grid {
+        display: grid;
+        grid-template-columns: 150px 1fr;
+        gap: 8px;
+        font-size: 14px;
+      }
+      .detail-label {
+        font-weight: 600;
+        color: #333;
+      }
+      .detail-value {
+        color: #555;
+        word-break: break-all;
+      }
+      .detail-value code {
+        background: #f5f5f5;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 12px;
       }
     </style>
   </head>
@@ -240,6 +317,17 @@
     </div>
 
     <div class="log-area" id="logArea"></div>
+
+    <!-- Modal for viewing document details -->
+    <div class="modal-overlay" id="detailModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Document Details</h2>
+          <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div id="detailContent"></div>
+      </div>
+    </div>
 
     <script>
       // Wait for page to load
@@ -400,6 +488,7 @@
             <td>${doc.name || doc.email || '-'}</td>
             <td>${userRef}</td>
             <td>
+              <button class="btn btn-primary" style="padding:4px 8px;font-size:12px;margin-right:4px;" onclick="showDetails(${idx})">Details</button>
               <button class="btn btn-danger" style="padding:4px 8px;font-size:12px" onclick="deleteOne(${idx})">Delete</button>
             </td>
           </tr>
@@ -431,6 +520,213 @@
           log(`❌ Delete failed: ${err.message}`)
         }
       }
+
+      // Show document details in modal
+      function showDetails(idx) {
+        const doc = foundDocs[idx]
+        const modal = document.getElementById('detailModal')
+        const content = document.getElementById('detailContent')
+
+        let html = ''
+
+        // Document ID section
+        html += `<div class="detail-section">
+          <h3>Document ID</h3>
+          <div class="detail-grid">
+            <span class="detail-label">_id:</span>
+            <span class="detail-value"><code>${doc._id}</code></span>
+            <span class="detail-label">_rev:</span>
+            <span class="detail-value"><code>${doc._rev}</code></span>
+            <span class="detail-label">Type:</span>
+            <span class="detail-value"><span class="type-badge type-${doc.type || 'unknown'}">${doc.type || 'unknown'}</span></span>
+          </div>
+        </div>`
+
+        // Common fields
+        const commonFields = [
+          'name',
+          'email',
+          'createdByUserId',
+          'ownerUserId',
+          'userId',
+          'createdAt',
+          'updatedAt',
+          'sharedWithUserIds',
+        ]
+        let commonHtml = ''
+        for (const field of commonFields) {
+          if (doc[field] !== undefined) {
+            let value = doc[field]
+            if (Array.isArray(value)) {
+              value = value.join(', ')
+            }
+            commonHtml += `<div class="detail-grid"><span class="detail-label">${field}:</span><span class="detail-value">${formatValue(value)}</span></div>`
+          }
+        }
+
+        if (commonHtml) {
+          html += `<div class="detail-section"><h3>Common Fields</h3>${commonHtml}</div>`
+        }
+
+        // Transaction-specific fields
+        if (doc.type === 'transaction') {
+          const txFields = [
+            'amount',
+            'currency',
+            'category',
+            'categoryId',
+            'walletId',
+            'walletName',
+            'description',
+            'date',
+            'type',
+            'tags',
+            'isRecurring',
+            'recurringInterval',
+            'attachmentCount',
+            'notes',
+          ]
+          let txHtml = ''
+          for (const field of txFields) {
+            if (doc[field] !== undefined) {
+              txHtml += `<div class="detail-grid"><span class="detail-label">${field}:</span><span class="detail-value">${formatValue(doc[field])}</span></div>`
+            }
+          }
+          if (txHtml) {
+            html += `<div class="detail-section"><h3>Transaction Fields</h3>${txHtml}</div>`
+          }
+        }
+
+        // Wallet-specific fields
+        if (doc.type === 'wallet') {
+          const walletFields = [
+            'balance',
+            'currency',
+            'initialBalance',
+            'color',
+            'icon',
+            'isDefault',
+            'isArchived',
+          ]
+          let walletHtml = ''
+          for (const field of walletFields) {
+            if (doc[field] !== undefined) {
+              walletHtml += `<div class="detail-grid"><span class="detail-label">${field}:</span><span class="detail-value">${formatValue(doc[field])}</span></div>`
+            }
+          }
+          if (walletHtml) {
+            html += `<div class="detail-section"><h3>Wallet Fields</h3>${walletHtml}</div>`
+          }
+        }
+
+        // Category-specific fields
+        if (doc.type === 'category') {
+          const catFields = ['color', 'icon', 'type', 'isDefault', 'budgetLimit']
+          let catHtml = ''
+          for (const field of catFields) {
+            if (doc[field] !== undefined) {
+              catHtml += `<div class="detail-grid"><span class="detail-label">${field}:</span><span class="detail-value">${formatValue(doc[field])}</span></div>`
+            }
+          }
+          if (catHtml) {
+            html += `<div class="detail-section"><h3>Category Fields</h3>${catHtml}</div>`
+          }
+        }
+
+        // Budget-specific fields
+        if (doc.type === 'budget') {
+          const budgetFields = [
+            'amount',
+            'spent',
+            'remaining',
+            'period',
+            'startDate',
+            'endDate',
+            'categoryId',
+            'walletId',
+            'isActive',
+          ]
+          let budgetHtml = ''
+          for (const field of budgetFields) {
+            if (doc[field] !== undefined) {
+              budgetHtml += `<div class="detail-grid"><span class="detail-label">${field}:</span><span class="detail-value">${formatValue(doc[field])}</span></div>`
+            }
+          }
+          if (budgetHtml) {
+            html += `<div class="detail-section"><h3>Budget Fields</h3>${budgetHtml}</div>`
+          }
+        }
+
+        // Show all remaining fields in JSON format
+        const shownFields = [
+          '_id',
+          '_rev',
+          'type',
+          'name',
+          'email',
+          'createdByUserId',
+          'ownerUserId',
+          'userId',
+          'createdAt',
+          'updatedAt',
+          'sharedWithUserIds',
+          'amount',
+          'currency',
+          'category',
+          'categoryId',
+          'walletId',
+          'walletName',
+          'description',
+          'date',
+          'type',
+          'tags',
+          'isRecurring',
+          'recurringInterval',
+          'attachmentCount',
+          'notes',
+          'balance',
+          'initialBalance',
+          'color',
+          'icon',
+          'isDefault',
+          'isArchived',
+          'budgetLimit',
+          'period',
+          'startDate',
+          'endDate',
+          'isActive',
+          'spent',
+          'remaining',
+        ]
+        const remaining = {}
+        for (const key of Object.keys(doc)) {
+          if (!shownFields.includes(key)) {
+            remaining[key] = doc[key]
+          }
+        }
+        if (Object.keys(remaining).length > 0) {
+          html += `<div class="detail-section"><h3>All Fields (JSON)</h3><pre style="background:#f5f5f5;padding:10px;border-radius:4px;overflow-x:auto;font-size:12px;">${JSON.stringify(doc, null, 2)}</pre></div>`
+        }
+
+        content.innerHTML = html
+        modal.classList.add('active')
+      }
+
+      function formatValue(value) {
+        if (value === null || value === undefined) return '<em style="color:#999;">null</em>'
+        if (typeof value === 'boolean') return value ? '✅ Yes' : '❌ No'
+        if (typeof value === 'object') return `<code>${JSON.stringify(value)}</code>`
+        return value
+      }
+
+      function closeModal() {
+        document.getElementById('detailModal').classList.remove('active')
+      }
+
+      // Close modal when clicking outside
+      document.getElementById('detailModal').addEventListener('click', function (e) {
+        if (e.target === this) closeModal()
+      })
 
       async function deleteSelected() {
         const checkboxes = document.querySelectorAll('.doc-check:checked')
