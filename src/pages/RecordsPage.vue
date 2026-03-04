@@ -424,6 +424,21 @@
             </div>
           </q-banner>
 
+          <!-- Date/Time Picker -->
+          <div class="q-mb-md">
+            <div class="text-subtitle2 text-weight-medium q-mb-sm">
+              <q-icon name="schedule" class="q-mr-sm" />
+              Date & Time
+            </div>
+            <q-input
+              v-model="form.datetime"
+              filled
+              type="datetime-local"
+              label="Transaction Date & Time"
+              class="datetime-input"
+            />
+          </div>
+
           <!-- Notes Field -->
           <div class="q-mb-lg">
             <q-input
@@ -771,6 +786,7 @@ const form = ref({
   categoryId: '',
   notes: '',
   walletId: '',
+  datetime: '',
 })
 
 // Investment income state
@@ -1567,6 +1583,7 @@ function openTransactionDialog() {
   form.value.categoryId = ''
   form.value.notes = ''
   form.value.walletId = wallets.value?.[0]?._id || ''
+  form.value.datetime = new Date().toISOString().slice(0, 16) // Format: YYYY-MM-DDTHH:mm
   transferFromBudget.value = false // Reset transfer direction
   selectedAutoBudgeter.value = null // Reset auto-budget selection
   isInvestmentIncome.value = false // Reset investment income state
@@ -1592,6 +1609,9 @@ function openEditDialog(transaction) {
     categoryId: transaction.categoryId,
     notes: transaction.notes || '',
     walletId: transaction.walletId,
+    datetime: transaction.datetime
+      ? new Date(transaction.datetime).toISOString().slice(0, 16)
+      : new Date().toISOString().slice(0, 16),
   }
   selectedAutoBudgeter.value = null // Reset auto-budget selection for editing
 
@@ -1705,6 +1725,11 @@ async function finishTransaction() {
   }
 
   try {
+    // Convert datetime from local format to ISO string
+    const transactionDateTime = form.value.datetime
+      ? new Date(form.value.datetime).toISOString()
+      : new Date().toISOString()
+
     const transactionData = {
       walletId: form.value.walletId,
       userId: usersStore.currentUser._id, // 🔧 FIX: Add userId to ensure transaction is queryable
@@ -1712,7 +1737,7 @@ async function finishTransaction() {
       amount: amount,
       categoryId: form.value.categoryId,
       notes: form.value.notes,
-      datetime: new Date().toISOString(),
+      datetime: transactionDateTime,
     }
 
     // Add investment income data if applicable
@@ -2144,6 +2169,11 @@ onMounted(async () => {
 
 .account-category-container {
   display: block !important;
+}
+
+/* DateTime input styling */
+.datetime-input {
+  max-width: 400px;
 }
 
 /* Full-screen dialog design */
