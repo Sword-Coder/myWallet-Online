@@ -430,13 +430,50 @@
               <q-icon name="schedule" class="q-mr-sm" />
               Date & Time
             </div>
-            <q-input
-              v-model="form.datetime"
-              filled
-              type="datetime-local"
-              label="Transaction Date & Time"
-              class="datetime-input"
-            />
+            <div class="row q-gutter-sm">
+              <div class="col">
+                <q-input
+                  v-model="form.date"
+                  filled
+                  label="Date"
+                  readonly
+                  class="datetime-picker-input"
+                >
+                  <template v-slot:append>
+                    <q-icon name="event" class="cursor-pointer">
+                      <q-popup-proxy cover transition-show="scale" transition-hide="scale">
+                        <q-date v-model="form.date" mask="YYYY-MM-DD" today-btn>
+                          <div class="row items-center justify-end">
+                            <q-btn v-close-popup label="Close" color="primary" flat />
+                          </div>
+                        </q-date>
+                      </q-popup-proxy>
+                    </q-icon>
+                  </template>
+                </q-input>
+              </div>
+              <div class="col">
+                <q-input
+                  v-model="form.time"
+                  filled
+                  label="Time"
+                  readonly
+                  class="datetime-picker-input"
+                >
+                  <template v-slot:append>
+                    <q-icon name="access_time" class="cursor-pointer">
+                      <q-popup-proxy cover transition-show="scale" transition-hide="scale">
+                        <q-time v-model="form.time">
+                          <div class="row items-center justify-end">
+                            <q-btn v-close-popup label="Close" color="primary" flat />
+                          </div>
+                        </q-time>
+                      </q-popup-proxy>
+                    </q-icon>
+                  </template>
+                </q-input>
+              </div>
+            </div>
           </div>
 
           <!-- Notes Field -->
@@ -786,7 +823,8 @@ const form = ref({
   categoryId: '',
   notes: '',
   walletId: '',
-  datetime: '',
+  date: '',
+  time: '',
 })
 
 // Investment income state
@@ -1578,12 +1616,18 @@ async function createOrUpdateBudget(categoryId, categoryName, amount) {
 function openTransactionDialog() {
   resetCalculator()
 
+  // Initialize datetime to current date and time
+  const now = new Date()
+  const dateStr = now.toISOString().slice(0, 10)
+  const timeStr = now.toTimeString().slice(0, 5)
+
   form.value.kind = 'expense'
   form.value.amount = ''
   form.value.categoryId = ''
   form.value.notes = ''
   form.value.walletId = wallets.value?.[0]?._id || ''
-  form.value.datetime = new Date().toISOString().slice(0, 16) // Format: YYYY-MM-DDTHH:mm
+  form.value.date = dateStr
+  form.value.time = timeStr
   transferFromBudget.value = false // Reset transfer direction
   selectedAutoBudgeter.value = null // Reset auto-budget selection
   isInvestmentIncome.value = false // Reset investment income state
@@ -1602,6 +1646,12 @@ function openTransactionDialog() {
 
 function openEditDialog(transaction) {
   selectedTransaction.value = transaction
+
+  // Parse existing datetime or use current
+  const txDate = transaction.datetime ? new Date(transaction.datetime) : new Date()
+  const dateStr = txDate.toISOString().slice(0, 10)
+  const timeStr = txDate.toTimeString().slice(0, 5)
+
   // Pre-populate form with current transaction data
   form.value = {
     kind: transaction.kind,
@@ -1609,9 +1659,8 @@ function openEditDialog(transaction) {
     categoryId: transaction.categoryId,
     notes: transaction.notes || '',
     walletId: transaction.walletId,
-    datetime: transaction.datetime
-      ? new Date(transaction.datetime).toISOString().slice(0, 16)
-      : new Date().toISOString().slice(0, 16),
+    date: dateStr,
+    time: timeStr,
   }
   selectedAutoBudgeter.value = null // Reset auto-budget selection for editing
 
@@ -1725,10 +1774,43 @@ async function finishTransaction() {
   }
 
   try {
-    // Convert datetime from local format to ISO string
-    const transactionDateTime = form.value.datetime
-      ? new Date(form.value.datetime).toISOString()
-      : new Date().toISOString()
+    // Convert date and time from form to ISO string
+    let transactionDateTime
+    if (form.value.date && form.value.time) {
+      // Parse time - handle both 24-hour (HH:mm) and 12-hour (h:mm A) formats
+      let hours, minutes
+      const timeStr = form.value.time.trim()
+
+      if (timeStr.includes('AM') || timeStr.includes('PM')) {
+        // 12-hour format (e.g., "10:30 AM")
+        const parts = timeStr.replace(/ (AM|PM)/i, '').split(':')
+        hours = parseInt(parts[0])
+        minutes = parseInt(parts[1])
+        const isPM = timeStr.toUpperCase().includes('PM')
+        const is12Hour = hours === 12
+
+        if (isPM && !is12Hour) {
+          hours += 12
+        } else if (!isPM && is12Hour) {
+          hours = 0
+        }
+      } else {
+        // 24-hour format (e.g., "10:30")
+        const parts = timeStr.split(':')
+        hours = parseInt(parts[0])
+        minutes = parseInt(parts[1])
+      }
+
+      // Create ISO datetime string
+      const dateTimeStr = `${form.value.date}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
+      transactionDateTime = new Date(dateTimeStr).toISOString()
+    } else if (form.value.date) {
+      // Only date provided, use start of day
+      transactionDateTime = new Date(`${form.value.date}T00:00:00`).toISOString()
+    } else {
+      // Fallback to current time
+      transactionDateTime = new Date().toISOString()
+    }
 
     const transactionData = {
       walletId: form.value.walletId,
@@ -2174,6 +2256,19 @@ onMounted(async () => {
 /* DateTime input styling */
 .datetime-input {
   max-width: 400px;
+}
+
+.datetime-picker-input {
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+  border-radius: 8px;
+}
+
+.datetime-picker-input :deep(.q-field__control) {
+  border-radius: 8px;
+}
+
+.datetime-picker-input :deep(.q-field__prepend) {
+  color: #4d934e;
 }
 
 /* Full-screen dialog design */
